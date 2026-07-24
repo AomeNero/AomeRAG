@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+/* ===== DeepSeek 设计 token（从 chat.deepseek.com 提取） ===== */
+@theme {
+  /* 背景与文字 */
+  --color-background: #ffffff;
+  --color-foreground: #0f1115;
+
+  /* 品牌主色 */
+  --color-brand: #3964fe;
+
+  /* 选中态浅蓝（开关/会话 hover） */
+  --color-brand-light: #edf3fe;
+  --color-brand-light-border: #b7c8fe;
+
+  /* 悬停浅灰 */
+  --color-hover: rgb(0 0 0 / 0.04);
+
+  /* 输入框 / 卡片浅底 */
+  --color-field: #f9fafb;
+
+  /* 次要灰（协议、次级链接） / 辅助灰（提示文案槽） */
+  --color-muted: #81858c;
+  --color-helper: #61666b;
+
+  /* 占位符文字（更浅） */
+  --color-placeholder: #adb2b8;
+
+  /* 分割线 / 未聚焦边框 */
+  --color-line: rgb(0 0 0 / 0.1);
+
+  /* 微信绿（已扫码状态） */
+  --color-wechat: #00bc0c;
+
+  /* 字体：Inter + 系统 CJK（近似 quote-cjk-patch） */
+  --font-sans: "Inter", "quote-cjk-patch", system-ui, -apple-system,
+    "PingFang SC", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 隐藏滚动条但保留滚动（DeepSeek 风格） */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}

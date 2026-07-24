@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+data/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# 私域知识库源文档（公司 IP，不入库）
+raw/
+# 第三方参考文档（非本项目代码）
+learn-claude-code.md

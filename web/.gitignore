@@ -1,0 +1,16 @@
+node_modules
+dist
+dist-ssr
+*.local
+
+# 登录态（含敏感 token，勿提交）
+scripts/ds-auth.json
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+
+# OS
+Thumbs.db
