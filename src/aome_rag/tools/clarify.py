@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from aome_rag.agent.events import ClarifyEvent
 from aome_rag.providers.base import ToolSchema
-from aome_rag.skills.base import EndTurn, SkillContext
+from aome_rag.tools.base import EndTurn, SkillContext
 
 
 class ClarifySkill:

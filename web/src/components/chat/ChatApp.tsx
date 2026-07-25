@@ -4,7 +4,6 @@ import { Sidebar } from './Sidebar'
 import { Composer } from './Composer'
 import { WelcomeScreen } from './WelcomeScreen'
 import { MessageList } from './MessageList'
-import { IngestModal } from './IngestModal'
 import type { ChatMessage } from '../../data/chat'
 import {
   deleteSession as apiDeleteSession,
@@ -27,7 +26,6 @@ export function ChatApp() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [streamingId, setStreamingId] = useState<string | null>(null)
-  const [ingestOpen, setIngestOpen] = useState(false)
   const [stats, setStats] = useState<SystemStats | null>(null)
   const [collapsed, setCollapsed] = useState<boolean>(
     () => localStorage.getItem(COLLAPSE_KEY) === '1',
@@ -249,7 +247,6 @@ export function ChatApp() {
           stats={stats}
           onSelect={selectConv}
           onNewChat={newChat}
-          onIngest={() => setIngestOpen(true)}
           onDelete={removeSession}
           onRename={renameSession}
           onCollapse={() => setCollapsed(true)}
@@ -299,15 +296,6 @@ export function ChatApp() {
           </div>
         )}
       </main>
-      {ingestOpen && (
-        <IngestModal
-          onClose={() => setIngestOpen(false)}
-          onDone={() => {
-            void loadSessions()
-            void loadStats()
-          }}
-        />
-      )}
     </div>
   )
 }

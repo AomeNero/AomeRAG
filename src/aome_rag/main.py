@@ -37,9 +37,10 @@ from .retrieval.store import ZvecStore
 from .services import Services  # noqa: F401
 from .session.db import open_db
 from .session.store import SessionStore
-from .skills.clarify import ClarifySkill
-from .skills.kb_search import KbSearchSkill
-from .skills.registry import SkillRegistry
+from .tools.clarify import ClarifySkill
+from .tools.kb_search import KbSearchSkill
+from .tools.registry import SkillRegistry
+from .tools.skill_loader import SkillLoaderSkill
 
 
 @asynccontextmanager
@@ -98,6 +99,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         registry = SkillRegistry()
         registry.register(KbSearchSkill())
         registry.register(ClarifySkill())
+        registry.register(SkillLoaderSkill())
         registry.discover(settings.skills_dir)
         app.state.skills = registry
 

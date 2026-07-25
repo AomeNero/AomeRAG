@@ -8,9 +8,9 @@ from fastapi.testclient import TestClient
 from aome_rag.config import Settings
 from aome_rag.main import create_app
 from aome_rag.retrieval.embedder import OllamaEmbedder
-from aome_rag.skills.clarify import ClarifySkill
-from aome_rag.skills.kb_search import KbSearchSkill
-from aome_rag.skills.registry import SkillRegistry
+from aome_rag.tools.clarify import ClarifySkill
+from aome_rag.tools.kb_search import KbSearchSkill
+from aome_rag.tools.registry import SkillRegistry
 
 from tests.fakes import FakeProvider
 

@@ -4,8 +4,8 @@ from aome_rag.agent.events import ErrorEvent, FinalEvent, TokenEvent, ToolResult
 from aome_rag.agent.loop import AgentLoop
 from aome_rag.providers.base import Finish, TextDelta, ToolCallDelta, ToolSchema
 from aome_rag.providers.messages import Message
-from aome_rag.skills.base import Skill, SkillContext
-from aome_rag.skills.registry import SkillRegistry
+from aome_rag.tools.base import Skill, SkillContext
+from aome_rag.tools.registry import SkillRegistry
 
 from tests.fakes import FakeProvider
 

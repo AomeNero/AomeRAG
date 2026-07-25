@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 
 from aome_rag.services import Services
-from aome_rag.skills.base import SkillContext
-from aome_rag.skills.kb_search import KbSearchSkill
+from aome_rag.tools.base import SkillContext
+from aome_rag.tools.kb_search import KbSearchSkill
 
 
 @dataclass

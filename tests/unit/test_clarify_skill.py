@@ -3,9 +3,9 @@ import pytest
 from aome_rag.agent.events import ClarifyEvent, FinalEvent
 from aome_rag.agent.loop import AgentLoop
 from aome_rag.providers.base import Finish, ToolCallDelta
-from aome_rag.skills.base import EndTurn, SkillContext
-from aome_rag.skills.clarify import ClarifySkill
-from aome_rag.skills.registry import SkillRegistry
+from aome_rag.tools.base import EndTurn, SkillContext
+from aome_rag.tools.clarify import ClarifySkill
+from aome_rag.tools.registry import SkillRegistry
 
 from tests.fakes import FakeProvider
 

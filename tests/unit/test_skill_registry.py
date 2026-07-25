@@ -1,8 +1,8 @@
 import textwrap
 from pathlib import Path
 
-from aome_rag.skills.base import SkillContext
-from aome_rag.skills.registry import SkillRegistry
+from aome_rag.tools.base import SkillContext
+from aome_rag.tools.registry import SkillRegistry
 
 _STUB = textwrap.dedent(
     """

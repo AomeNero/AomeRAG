@@ -1,5 +1,5 @@
 import { useEffect, useState, type KeyboardEvent } from 'react'
-import { Check, PanelLeft, Pencil, Plus, Search, Trash2, Upload, X } from 'lucide-react'
+import { Check, PanelLeft, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { searchSessions, type Session, type SessionHit, type SystemStats } from '../../lib/api'
 import { cn } from '../../lib/utils'
 
@@ -9,7 +9,6 @@ interface Props {
   stats: SystemStats | null
   onSelect: (id: string) => void
   onNewChat: () => void
-  onIngest: () => void
   onDelete: (id: string) => void
   onRename: (id: string, title: string) => void
   onCollapse: () => void
@@ -42,7 +41,6 @@ export function Sidebar({
   stats,
   onSelect,
   onNewChat,
-  onIngest,
   onDelete,
   onRename,
   onCollapse,
@@ -152,15 +150,6 @@ export function Sidebar({
         <Plus className="h-4 w-4" strokeWidth={2} />
         <span>开启新对话</span>
       </button>
-      <button
-        onClick={onIngest}
-        className="mt-2 flex h-10 w-full items-center justify-center gap-2 rounded-full border border-line px-4 text-sm font-medium text-foreground transition hover:bg-hover"
-        title="切片并导入 raw 目录的知识库文档"
-      >
-        <Upload className="h-4 w-4" strokeWidth={1.75} />
-        <span>导入知识库</span>
-      </button>
-
       <div className="scrollbar-none mt-4 flex-1 overflow-y-auto">
         {groups.map((group) => (
           <div key={group.label} className="mb-1">

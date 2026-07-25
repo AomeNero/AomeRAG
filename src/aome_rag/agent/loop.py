@@ -25,8 +25,8 @@ from .events import (
     ToolStartEvent,
 )
 from ..providers.openai_compat import parse_tool_arguments
-from ..skills.base import EndTurn, SkillContext
-from ..skills.registry import SkillRegistry
+from ..tools.base import EndTurn, SkillContext
+from ..tools.registry import SkillRegistry
 
 
 class AgentLoop:

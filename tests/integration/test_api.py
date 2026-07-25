@@ -14,9 +14,9 @@ from aome_rag.providers.base import Finish, LLMResponse, TextDelta, ToolCallDelt
 from aome_rag.providers.messages import Message
 from aome_rag.retrieval.embedder import OllamaEmbedder
 from aome_rag.retrieval.retriever import Hit
-from aome_rag.skills.clarify import ClarifySkill
-from aome_rag.skills.kb_search import KbSearchSkill
-from aome_rag.skills.registry import SkillRegistry
+from aome_rag.tools.clarify import ClarifySkill
+from aome_rag.tools.kb_search import KbSearchSkill
+from aome_rag.tools.registry import SkillRegistry
 
 from tests.fakes import FakeProvider
 

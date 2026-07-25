@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from aome_rag.providers.base import ToolSchema
-from aome_rag.skills.base import SkillContext
+from aome_rag.tools.base import SkillContext
 
 
 class KbSearchSkill:
