@@ -31,8 +31,8 @@ class ClarifySkill:
         },
     }
     system_prompt_fragment = (
-        "Skill `clarify`: use when the user's question is ambiguous. Ask ONE concrete question, "
-        "then stop. Do NOT guess. Do NOT call kb_search before clarifying if the query is unclear."
+        "Skill `clarify`：当问题不清或缺关键信息时调用。每次只问【一个】最关键、最聚焦的问题"
+        "（不要一次列多个）；问完即停，等用户回答后再继续。绝不臆测、绝不在不清时调用 kb_search。"
     )
 
     async def handle(self, ctx: SkillContext, *, question: str) -> str:
