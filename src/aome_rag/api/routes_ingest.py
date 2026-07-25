@@ -46,7 +46,7 @@ async def ingest_dir(
 ):
     """Recursively ingest the configured RAW_DIR. SSE: scan -> per-file start/done/skipped
     -> summary. .md is read directly; other supported types go through markitdown."""
-    raw_dir = state.settings.raw_dir
+    raw_dir = state.settings.md_data_dir
     base = Path(raw_dir)
     files: list[tuple[str, str]] = []  # (source_doc relative path, absolute path)
     skipped: list[str] = []

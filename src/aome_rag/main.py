@@ -20,7 +20,10 @@ from .agent.loop import AgentLoop  # noqa: F401 - re-exported for convenience
 from .api.routes_chat import router as chat_router
 from .api.routes_health import router as health_router
 from .api.routes_ingest import router as ingest_router
+from .api.routes_clean import router as clean_router
 from .api.routes_session import router as session_router
+from .cleaning.cleaner import Converter
+from .cleaning.pipeline import CleaningPipeline
 from .config import Settings, get_settings
 from .ingestion.parser import Parser
 from .ingestion.chunker import Chunker
@@ -75,6 +78,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.ingestion_lock, app.state.zvec_executor,
     )
 
+    # --- cleaning (raw-data → md-data) ---
+    app.state.cleaning = ov.get("cleaning") or CleaningPipeline(
+        Converter(), app.state.zvec_executor
+    )
+
     # --- provider ---
     app.state.provider = ov.get("provider") or OpenAICompatProvider(
         api_key=settings.deepseek_api_key,
@@ -110,6 +118,7 @@ def create_app(settings: Settings | None = None, *, overrides: dict | None = Non
     app.include_router(health_router)
     app.include_router(chat_router)
     app.include_router(ingest_router)
+    app.include_router(clean_router)
     app.include_router(session_router)
     # Serve the built frontend last (API routes above take precedence). Only mounts when the
     # dist dir exists; in dev the Vite server serves the frontend and this is skipped.

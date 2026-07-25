@@ -53,8 +53,9 @@ class Settings(BaseSettings):
     # ---- Skills drop-in directory ----
     skills_dir: str = "./skills"
 
-    # ---- Raw documents directory (ingested via POST /ingest/dir) ----
-    raw_dir: str = "./raw"
+    # ---- Raw data (originals: PDF/docx/…) and cleaned markdown output ----
+    raw_data_dir: str = "./raw/raw-data"
+    md_data_dir: str = "./raw/md-data"
 
     # ---- Built frontend dist (served by FastAPI in prod when present; dev uses Vite) ----
     frontend_dist: str = "./web/dist"

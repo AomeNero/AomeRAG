@@ -45,7 +45,7 @@ def test_ingest_dir_recursive_with_skip(tmp_path) -> None:
     (raw / "img.png").write_bytes(b"\x89PNG")  # unsupported -> skipped
 
     settings = Settings(
-        raw_dir=str(raw),
+        md_data_dir=str(raw),
         sqlite_path=str(tmp_path / "s.db"),
         zvec_path=str(tmp_path / "col"),
         skills_dir=str(tmp_path / "sk"),
@@ -78,7 +78,7 @@ def test_ingest_dir_recursive_with_skip(tmp_path) -> None:
 
 def test_ingest_dir_requires_auth(tmp_path) -> None:
     settings = Settings(
-        raw_dir=str(tmp_path / "raw"),
+        md_data_dir=str(tmp_path / "raw"),
         sqlite_path=str(tmp_path / "s.db"),
         zvec_path=str(tmp_path / "col"),
         skills_dir=str(tmp_path / "sk"),
