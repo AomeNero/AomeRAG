@@ -198,6 +198,7 @@ class AgentLoop:
                         name=c["name"],
                         is_error=is_error,
                         content=payload,
+                        details=getattr(ctx, "details", None),
                     )
                 )
                 history.append(

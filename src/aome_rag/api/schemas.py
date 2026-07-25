@@ -36,3 +36,7 @@ class SessionOut(BaseModel):
 
 class CreateSessionRequest(BaseModel):
     title: str | None = None
+
+
+class TitleBody(BaseModel):
+    title: str

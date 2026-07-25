@@ -10,7 +10,8 @@ from fastapi.testclient import TestClient
 
 from aome_rag.config import Settings
 from aome_rag.main import create_app
-from aome_rag.providers.base import Finish, TextDelta, ToolCallDelta
+from aome_rag.providers.base import Finish, LLMResponse, TextDelta, ToolCallDelta
+from aome_rag.providers.messages import Message
 from aome_rag.retrieval.embedder import OllamaEmbedder
 from aome_rag.retrieval.retriever import Hit
 from aome_rag.skills.clarify import ClarifySkill
@@ -110,6 +111,7 @@ def test_chat_sse_kb_search(build_app) -> None:
     assert types[-1] == "final"
     tool_result = next(e for e in events if e["type"] == "tool_result")
     assert "ops.md" in tool_result["content"]
+    assert tool_result["details"] and tool_result["details"][0]["source_doc"] == "ops.md"
 
 
 def test_session_isolation_across_users(build_app) -> None:
@@ -145,3 +147,71 @@ def test_chat_requires_auth(build_app) -> None:
     with TestClient(app) as client:
         r = client.post("/chat", json={"message": "hi", "stream": False})
     assert r.status_code == 401
+
+
+def test_stats(build_app) -> None:
+    app = build_app(provider=FakeProvider())
+    with TestClient(app) as client:
+        s = client.get("/stats", headers={"X-User-Id": "alice"}).json()
+    assert s["n_chunks"] == 0
+    assert s["embed_dim"] == 8
+    assert s["collection"] == "kb_chunks_v1"
+    assert s["top_k"] == 6
+    assert s["llm_model"] and s["embed_model"]
+
+
+def test_auto_title_via_endpoint(build_app) -> None:
+    provider = FakeProvider()
+    provider.enqueue([TextDelta(text="answer"), Finish(finish_reason="stop")])  # /chat stream
+    provider.enqueue(
+        LLMResponse(message=Message.text("assistant", "GI328 部署流程"), finish_reason="stop")
+    )  # /title complete
+    app = build_app(provider=provider)
+    with TestClient(app) as client:
+        r = client.post(
+            "/chat", json={"message": "怎么部署", "stream": False}, headers={"X-User-Id": "alice"}
+        )
+        sid = r.json()["session_id"]
+        t = client.post(f"/sessions/{sid}/title", headers={"X-User-Id": "alice"})
+        assert t.status_code == 200
+        title = t.json()["title"]
+        assert len(title) <= 15
+
+        sess = client.get("/sessions", headers={"X-User-Id": "alice"}).json()
+        assert next(s for s in sess if s["id"] == sid)["title"] == title
+
+
+def test_search_sessions(build_app) -> None:
+    provider = FakeProvider()
+    provider.enqueue([TextDelta(text="GI328 的 PINMAP 在第 3 页"), Finish(finish_reason="stop")])
+    app = build_app(provider=provider)
+    with TestClient(app) as client:
+        client.post(
+            "/chat", json={"message": "pinmap?", "stream": False}, headers={"X-User-Id": "alice"}
+        )
+        r = client.get("/sessions/search?q=PINMAP", headers={"X-User-Id": "alice"})
+        assert r.status_code == 200
+        results = r.json()
+        assert len(results) >= 1
+        assert results[0]["session_id"]
+        # isolation: another user sees none of alice's messages
+        bob = client.get("/sessions/search?q=PINMAP", headers={"X-User-Id": "bob"}).json()
+        assert bob == []
+
+
+def test_manual_rename(build_app) -> None:
+    app = build_app(provider=FakeProvider())
+    with TestClient(app) as client:
+        sid = client.post(
+            "/sessions", json={"title": None}, headers={"X-User-Id": "alice"}
+        ).json()["id"]
+        p = client.patch(
+            f"/sessions/{sid}", json={"title": "我的会话"}, headers={"X-User-Id": "alice"}
+        )
+        assert p.status_code == 200
+        assert p.json()["title"] == "我的会话"
+        # other user can't rename alice's session
+        bob = client.patch(
+            f"/sessions/{sid}", json={"title": "hack"}, headers={"X-User-Id": "bob"}
+        )
+        assert bob.status_code == 404

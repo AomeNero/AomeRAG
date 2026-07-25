@@ -26,3 +26,21 @@ async def readyz(state=Depends(get_state)) -> dict[str, str]:
         "provider": "ok" if getattr(state, "provider", None) is not None else "down",
         "deepseek_key": "present" if settings.deepseek_api_key else "missing",
     }
+
+
+@router.get("/stats")
+async def stats(state=Depends(get_state)) -> dict[str, object]:
+    """System info for the UI: KB size + model/config."""
+    settings = state.settings
+    try:
+        n_chunks: int = state.store.chunk_count()
+    except Exception:  # noqa: BLE001 - store not ready / stats unavailable
+        n_chunks = 0
+    return {
+        "n_chunks": n_chunks,
+        "llm_model": settings.deepseek_model,
+        "embed_model": settings.ollama_embed_model,
+        "embed_dim": settings.embed_dim,
+        "collection": settings.kb_collection,
+        "top_k": settings.top_k,
+    }

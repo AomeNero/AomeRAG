@@ -5,7 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 // Backend API base (the FastAPI app). In dev, Vite proxies these prefixes so the browser
 // stays same-origin (no CORS); in prod, `npm run build` output is served by FastAPI.
 const BACKEND = 'http://localhost:8000'
-const API_PREFIXES = ['/chat', '/sessions', '/ingest', '/health', '/readyz']
+const API_PREFIXES = ['/chat', '/sessions', '/ingest', '/health', '/readyz', '/stats']
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],

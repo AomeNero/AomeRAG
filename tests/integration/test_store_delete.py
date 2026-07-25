@@ -28,10 +28,12 @@ def test_delete_by_source_removes_only_that_source(tmp_path) -> None:
             _chunk("b.md#0", "b.md", [0.9, 0.9, 0.9, 0.9]),
         ]
     )
+    assert store.chunk_count() == 3
     store.delete_by_source("a.md")
     got = store.fetch_ids(["a.md#0", "a.md#1", "b.md#0"])
     assert "a.md#0" not in got and "a.md#1" not in got
     assert "b.md#0" in got
+    assert store.chunk_count() == 1
 
 
 def test_delete_by_source_with_spaces_and_cjk(tmp_path) -> None:

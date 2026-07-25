@@ -41,6 +41,17 @@ class KbSearchSkill:
         hits = await retriever.search(query, top_k=top_k)
         if not hits:
             return "No relevant documents found for that query."
+        # structured hits for the UI (the model still reads the formatted string below)
+        ctx.details = [
+            {
+                "source_doc": h.source_doc,
+                "heading_path": h.heading_path,
+                "page": h.page,
+                "score": h.score,
+                "text": h.text,
+            }
+            for h in hits
+        ]
         return _format_hits(hits)
 
 

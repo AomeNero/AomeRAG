@@ -103,3 +103,48 @@ class SessionStore:
         await self._db.execute("DELETE FROM sessions WHERE id=?", (session_id,))
         await self._db.commit()
         return True
+
+    async def set_title(self, session_id: str, user_id: str, title: str) -> bool:
+        """Set/rename a session's title. Returns False if not found / not owned."""
+        row = await self._fetchone(
+            "SELECT user_id FROM sessions WHERE id=?", (session_id,)
+        )
+        if row is None or row["user_id"] != user_id:
+            return False
+        await self._db.execute(
+            "UPDATE sessions SET title=?, updated_at=? WHERE id=?",
+            (title, time.time(), session_id),
+        )
+        await self._db.commit()
+        return True
+
+    async def search_messages(
+        self, user_id: str, q: str, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        """Keyword search (SQL LIKE) over a user's message text + session titles.
+        Returns hits with a snippet around the first match."""
+        like = f"%{q}%"
+        rows = await self._fetchall(
+            "SELECT m.session_id, m.role, m.content_json, s.title "
+            "FROM messages m JOIN sessions s ON m.session_id = s.id "
+            "WHERE m.user_id = ? AND (m.content_json LIKE ? OR s.title LIKE ?) "
+            "ORDER BY m.created_at DESC LIMIT ?",
+            (user_id, like, like, limit),
+        )
+        needle = q.lower()
+        results: list[dict[str, Any]] = []
+        for r in rows:
+            text = Message.model_validate_json(r["content_json"]).as_text()
+            idx = text.lower().find(needle)
+            start = max(0, idx - 30) if idx >= 0 else 0
+            end = (idx + len(q) + 60) if idx >= 0 else 60
+            snippet = text[start:end]
+            results.append(
+                {
+                    "session_id": r["session_id"],
+                    "title": r["title"] or "新对话",
+                    "role": r["role"],
+                    "snippet": snippet,
+                }
+            )
+        return results

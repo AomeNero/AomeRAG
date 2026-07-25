@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { PanelLeft } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { Composer } from './Composer'
 import { WelcomeScreen } from './WelcomeScreen'
@@ -7,12 +8,18 @@ import { IngestModal } from './IngestModal'
 import type { ChatMessage } from '../../data/chat'
 import {
   deleteSession as apiDeleteSession,
+  generateTitle,
   getMessages,
+  getStats,
   listSessions,
+  patchSessionTitle,
   streamChat,
   type ChatEvent,
   type Session,
+  type SystemStats,
 } from '../../lib/api'
+
+const COLLAPSE_KEY = 'aome_sidebar_collapsed'
 
 export function ChatApp() {
   const [sessions, setSessions] = useState<Session[]>([])
@@ -21,11 +28,20 @@ export function ChatApp() {
   const [input, setInput] = useState('')
   const [streamingId, setStreamingId] = useState<string | null>(null)
   const [ingestOpen, setIngestOpen] = useState(false)
+  const [stats, setStats] = useState<SystemStats | null>(null)
+  const [collapsed, setCollapsed] = useState<boolean>(
+    () => localStorage.getItem(COLLAPSE_KEY) === '1',
+  )
+  const [searchQuery, setSearchQuery] = useState<string | null>(null)
 
   const abortRef = useRef<AbortController | null>(null)
   const currentIdRef = useRef<string | null>(null)
   const counter = useRef(0)
   const nextId = (p: string) => `${p}-${counter.current++}`
+
+  useEffect(() => {
+    localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0')
+  }, [collapsed])
 
   const loadSessions = async () => {
     try {
@@ -34,15 +50,24 @@ export function ChatApp() {
       // keep sidebar as-is
     }
   }
+  const loadStats = async () => {
+    try {
+      setStats(await getStats())
+    } catch {
+      // keep last stats
+    }
+  }
 
   useEffect(() => {
     void loadSessions()
+    void loadStats()
   }, [])
 
   const selectConv = async (id: string) => {
     if (streamingId) abortRef.current?.abort()
     setCurrentId(id)
     currentIdRef.current = id
+    setSearchQuery(null)
     try {
       const history = await getMessages(id)
       setMessages(
@@ -53,12 +78,18 @@ export function ChatApp() {
     }
   }
 
+  const onSearchHighlight = async (sessionId: string, query: string) => {
+    await selectConv(sessionId)
+    setSearchQuery(query)
+  }
+
   const newChat = () => {
     if (streamingId) abortRef.current?.abort()
     setCurrentId(null)
     currentIdRef.current = null
     setMessages([])
     setInput('')
+    setSearchQuery(null)
   }
 
   const removeSession = async (id: string) => {
@@ -69,6 +100,15 @@ export function ChatApp() {
     }
     if (currentIdRef.current === id) newChat()
     void loadSessions()
+  }
+
+  const renameSession = async (id: string, title: string) => {
+    try {
+      await patchSessionTitle(id, title)
+      await loadSessions()
+    } catch {
+      // ignore
+    }
   }
 
   const stop = () => abortRef.current?.abort()
@@ -111,6 +151,7 @@ export function ChatApp() {
                     ...t,
                     status: (ev.is_error ? 'error' : 'ok') as 'ok' | 'error',
                     content: ev.content,
+                    details: ev.details,
                   }
                 : t,
             )
@@ -163,7 +204,9 @@ export function ChatApp() {
   const send = async () => {
     const text = input.trim()
     if (!text || streamingId) return
+    const wasNew = currentIdRef.current === null
     setInput('')
+    setSearchQuery(null)
     const userMsg: ChatMessage = { id: nextId('u'), role: 'user', content: text }
     const assistantId = nextId('a')
     setMessages((prev) => [
@@ -172,6 +215,14 @@ export function ChatApp() {
       { id: assistantId, role: 'assistant', content: '' },
     ])
     await runTurn(text, assistantId)
+    if (wasNew && currentIdRef.current) {
+      try {
+        await generateTitle(currentIdRef.current)
+        await loadSessions()
+      } catch {
+        // title generation is best-effort
+      }
+    }
   }
 
   const regenerate = async () => {
@@ -191,21 +242,37 @@ export function ChatApp() {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
-      <Sidebar
-        sessions={sessions}
-        currentId={currentId}
-        onSelect={selectConv}
-        onNewChat={newChat}
-        onIngest={() => setIngestOpen(true)}
-        onDelete={removeSession}
-      />
-      <main className="flex flex-1 flex-col overflow-hidden">
+      {!collapsed && (
+        <Sidebar
+          sessions={sessions}
+          currentId={currentId}
+          stats={stats}
+          onSelect={selectConv}
+          onNewChat={newChat}
+          onIngest={() => setIngestOpen(true)}
+          onDelete={removeSession}
+          onRename={renameSession}
+          onCollapse={() => setCollapsed(true)}
+          onSearchHighlight={onSearchHighlight}
+        />
+      )}
+      <main className="relative flex flex-1 flex-col overflow-hidden">
+        {collapsed && (
+          <button
+            onClick={() => setCollapsed(false)}
+            className="absolute left-3 top-3 z-10 rounded-full border border-line bg-white p-2 text-foreground shadow-sm transition hover:bg-hover"
+            title="展开侧边栏"
+          >
+            <PanelLeft className="h-4 w-4" strokeWidth={1.75} />
+          </button>
+        )}
         {hasCurrent ? (
           <>
             <MessageList
               messages={messages}
               streamingId={streamingId}
               onRegenerate={regenerate}
+              searchQuery={searchQuery}
             />
             <div className="pb-4 pt-2">
               <Composer
@@ -233,7 +300,13 @@ export function ChatApp() {
         )}
       </main>
       {ingestOpen && (
-        <IngestModal onClose={() => setIngestOpen(false)} onDone={() => void loadSessions()} />
+        <IngestModal
+          onClose={() => setIngestOpen(false)}
+          onDone={() => {
+            void loadSessions()
+            void loadStats()
+          }}
+        />
       )}
     </div>
   )

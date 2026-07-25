@@ -43,7 +43,7 @@
 
 **三步上手**：
 
-1. **启动**：`uv run uvicorn aome_rag.main:app --workers 1`（开 http://localhost:8000）。
+1. **启动**：`uv run aomerag`（开 http://localhost:8000；等价于 `uv run uvicorn aome_rag.main:app`）。
 2. **喂资料**：点页面左下「导入知识库」，或 `curl -N -X POST -H "X-User-Id: alice" http://localhost:8000/ingest/dir`。
 3. **提问**：在输入框问，比如「GI328 的 PINMAP 是什么？」——看到它先「检索知识库」，再流式给出带来源的回答。
 
@@ -433,7 +433,7 @@ AomeCode/
 uv venv --python 3.12
 uv pip install -e ".[dev,vec,ingest]"
 cp .env.example .env            # 填 DEEPSEEK_API_KEY 等
-uv run uvicorn aome_rag.main:app --workers 1
+uv run aomerag                  # 短命令（= uv run uvicorn aome_rag.main:app，workers 锁死 1）
 
 # 前端：开发（热重载，5173+8000 两进程）
 cd web && npm install && npm run dev

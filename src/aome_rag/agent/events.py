@@ -25,6 +25,7 @@ class ToolResultEvent(BaseModel):
     name: str
     is_error: bool
     content: str
+    details: list[dict[str, Any]] | None = None  # structured hits for the UI (kb_search)
 
 
 class ClarifyEvent(BaseModel):

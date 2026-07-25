@@ -20,6 +20,7 @@ class SkillContext:
     user: Any = None
     session_id: str = ""
     services: Any = None
+    details: Any = None  # optional structured payload for the UI (e.g. kb_search hits)
     pending: list[Any] = field(default_factory=list)
 
     async def emit(self, event: Any) -> None:

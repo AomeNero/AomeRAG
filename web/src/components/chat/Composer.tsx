@@ -42,7 +42,7 @@ export function Composer({ value, onChange, onSend, onStop, streaming }: Props) 
           }}
           onKeyDown={onKeyDown}
           rows={1}
-          placeholder="问我任何关于知识库的问题"
+          placeholder="你好！有什么可以帮你的吗？"
           className="scrollbar-none max-h-[200px] w-full resize-none bg-transparent px-3 pt-2 text-[16px] leading-6 text-foreground outline-none placeholder:text-placeholder"
         />
         <div className="flex items-center gap-2 px-1 pt-1">
@@ -60,7 +60,7 @@ export function Composer({ value, onChange, onSend, onStop, streaming }: Props) 
               disabled={!canSend}
               className={cn(
                 'ml-auto flex h-8 w-8 items-center justify-center rounded-full transition',
-                canSend ? 'bg-brand text-white hover:brightness-95' : 'bg-line text-muted',
+                canSend ? 'bg-brand text-white hover:brightness-95' : 'bg-brand text-white',
               )}
             >
               <ArrowUp className="h-5 w-5" strokeWidth={2} />

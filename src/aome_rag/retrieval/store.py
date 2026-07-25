@@ -66,3 +66,7 @@ class ZvecStore:
         zvec filter DSL is SQL-like with a single `=`; string literal in double quotes."""
         self._col.delete_by_filter(f'{F_SOURCE_DOC} = "{source_doc}"')
         self._col.flush()
+
+    def chunk_count(self) -> int:
+        """Total number of chunks in the collection."""
+        return self._col.stats.doc_count

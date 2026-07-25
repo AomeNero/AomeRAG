@@ -5,7 +5,7 @@ export type ChatEvent =
   | { type: 'session'; session_id: string }
   | { type: 'token'; text: string }
   | { type: 'tool_start'; tool_call_id: string; name: string; arguments: Record<string, unknown> }
-  | { type: 'tool_result'; tool_call_id: string; name: string; is_error: boolean; content: string }
+  | { type: 'tool_result'; tool_call_id: string; name: string; is_error: boolean; content: string; details?: RetrievalHit[] }
   | { type: 'clarify'; question: string }
   | { type: 'final' }
   | { type: 'error'; code: string; message: string }
@@ -25,6 +25,14 @@ export type Session = {
 }
 
 export type HistoryMessage = { role: 'user' | 'assistant'; text: string }
+
+export type RetrievalHit = {
+  source_doc: string
+  heading_path: string
+  page: number | null
+  score: number
+  text: string
+}
 
 const USER_KEY = 'aome_user_id'
 
@@ -105,4 +113,47 @@ export async function getMessages(sessionId: string): Promise<HistoryMessage[]> 
 export async function deleteSession(sessionId: string): Promise<void> {
   const r = await fetch(`/sessions/${sessionId}`, { method: 'DELETE', headers: authHeaders() })
   if (!r.ok) throw new Error(`/sessions delete failed: ${r.status}`)
+}
+
+export type SystemStats = {
+  n_chunks: number
+  llm_model: string
+  embed_model: string
+  embed_dim: number
+  collection: string
+  top_k: number
+}
+
+export async function getStats(): Promise<SystemStats> {
+  const r = await fetch('/stats', { headers: authHeaders() })
+  if (!r.ok) throw new Error(`/stats failed: ${r.status}`)
+  return (await r.json()) as SystemStats
+}
+
+export async function generateTitle(sessionId: string): Promise<string> {
+  const r = await fetch(`/sessions/${sessionId}/title`, { method: 'POST', headers: authHeaders() })
+  if (!r.ok) throw new Error(`/title failed: ${r.status}`)
+  return ((await r.json()) as { title: string }).title
+}
+
+export async function patchSessionTitle(sessionId: string, title: string): Promise<void> {
+  const r = await fetch(`/sessions/${sessionId}`, {
+    method: 'PATCH',
+    headers: authHeaders(true),
+    body: JSON.stringify({ title }),
+  })
+  if (!r.ok) throw new Error(`PATCH session failed: ${r.status}`)
+}
+
+export type SessionHit = {
+  session_id: string
+  title: string
+  role: 'user' | 'assistant'
+  snippet: string
+}
+
+export async function searchSessions(q: string): Promise<SessionHit[]> {
+  const r = await fetch(`/sessions/search?q=${encodeURIComponent(q)}`, { headers: authHeaders() })
+  if (!r.ok) throw new Error(`/sessions/search failed: ${r.status}`)
+  return (await r.json()) as SessionHit[]
 }
