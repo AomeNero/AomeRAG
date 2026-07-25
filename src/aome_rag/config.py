@@ -42,7 +42,7 @@ class Settings(BaseSettings):
 
     # ---- Agent loop ----
     max_concurrent_loops: int = 16
-    max_iterations: int = 6
+    max_iterations: int = 12
 
     # ---- Session history (SQLite) ----
     sqlite_path: str = "./data/sessions.db"

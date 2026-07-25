@@ -7,7 +7,7 @@ def test_defaults() -> None:
     f = Settings.model_fields
     assert f["embed_dim"].default == 1024
     assert f["deepseek_model"].default == "deepseek-chat"
-    assert f["max_iterations"].default == 6
+    assert f["max_iterations"].default == 12
     assert f["raw_data_dir"].default == "./raw/raw-data"
     assert f["md_data_dir"].default == "./raw/md-data"
     # bge-m3 via Ollama exposes dense only — keyword channel is Zvec FTS, not sparse.
