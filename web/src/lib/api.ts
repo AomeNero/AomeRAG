@@ -157,3 +157,39 @@ export async function searchSessions(q: string): Promise<SessionHit[]> {
   if (!r.ok) throw new Error(`/sessions/search failed: ${r.status}`)
   return (await r.json()) as SessionHit[]
 }
+
+// ---- Admin API ----
+
+export async function* streamCleanDir(signal?: AbortSignal): AsyncGenerator<IngestEvent> {
+  const resp = await fetch('/clean/dir', { method: 'POST', headers: authHeaders(), signal })
+  if (!resp.ok) throw new Error(`/clean/dir failed: ${resp.status}`)
+  for await (const ev of sseEvents(resp)) yield ev as unknown as IngestEvent
+}
+
+export type FileInfo = { name: string; size: number }
+export type AdminSession = {
+  id: string
+  user_id: string
+  title: string | null
+  created_at: number
+  updated_at: number
+}
+
+export async function getFiles(
+  type: 'raw-data' | 'md-data',
+): Promise<{ dir: string; n_files: number; files: FileInfo[] }> {
+  const r = await fetch(`/admin/files?type=${type}`, { headers: authHeaders() })
+  if (!r.ok) throw new Error(`/admin/files failed: ${r.status}`)
+  return (await r.json()) as { dir: string; n_files: number; files: FileInfo[] }
+}
+
+export async function resetStore(): Promise<void> {
+  const r = await fetch('/admin/reset', { method: 'POST', headers: authHeaders() })
+  if (!r.ok) throw new Error(`/admin/reset failed: ${r.status}`)
+}
+
+export async function getAllSessions(): Promise<AdminSession[]> {
+  const r = await fetch('/admin/sessions', { headers: authHeaders() })
+  if (!r.ok) throw new Error(`/admin/sessions failed: ${r.status}`)
+  return (await r.json()) as AdminSession[]
+}

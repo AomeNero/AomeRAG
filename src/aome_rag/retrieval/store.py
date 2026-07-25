@@ -15,6 +15,8 @@ from .schema import DENSE_FIELD, F_SOURCE_DOC, OUTPUT_FIELDS, TEXT_FIELD, build_
 class ZvecStore:
     def __init__(self, path: str, dim: int, collection_name: str = "kb_chunks_v1") -> None:
         self.path = path
+        self._dim = dim
+        self._collection_name = collection_name
         if os.path.exists(path):
             self._col = zvec.open(path)
         else:
@@ -70,3 +72,10 @@ class ZvecStore:
     def chunk_count(self) -> int:
         """Total number of chunks in the collection."""
         return self._col.stats.doc_count
+
+    def clear(self) -> None:
+        """Destroy and recreate the collection (danger zone — wipes all chunks)."""
+        self._col.destroy()
+        self._col = zvec.create_and_open(
+            self.path, build_collection_schema(self._dim, self._collection_name)
+        )

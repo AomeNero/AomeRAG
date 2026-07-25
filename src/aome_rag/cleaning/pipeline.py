@@ -96,7 +96,7 @@ class CleaningPipeline:
 
         yield {
             "type": "summary",
-            "n_ok": n_ok,
+            "n_docs": n_ok,
             "n_failed": n_failed,
             "errors": errors,
             "elapsed_s": round(time.monotonic() - t0, 2),

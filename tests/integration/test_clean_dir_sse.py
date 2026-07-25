@@ -40,7 +40,7 @@ def test_clean_dir_produces_md_with_frontmatter(tmp_path) -> None:
     types = [e["type"] for e in events]
     assert types[0] == "scan"
     assert types[-1] == "summary"
-    assert events[-1]["n_ok"] >= 1
+    assert events[-1]["n_docs"] >= 1
     assert events[-1]["n_failed"] == 0
 
     out = (md / "test.md").read_text(encoding="utf-8")

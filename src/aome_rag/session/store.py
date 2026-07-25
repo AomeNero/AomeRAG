@@ -93,6 +93,24 @@ class SessionStore:
         )
         await self._db.commit()
 
+    async def list_all_sessions(self, limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
+        """Admin: list sessions across ALL users (not scoped)."""
+        rows = await self._fetchall(
+            "SELECT id, user_id, title, created_at, updated_at FROM sessions "
+            "ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        )
+        return [
+            {
+                "id": r["id"],
+                "user_id": r["user_id"],
+                "title": r["title"],
+                "created_at": r["created_at"],
+                "updated_at": r["updated_at"],
+            }
+            for r in rows
+        ]
+
     async def delete_session(self, session_id: str, user_id: str) -> bool:
         row = await self._fetchone(
             "SELECT user_id FROM sessions WHERE id=?", (session_id,)
