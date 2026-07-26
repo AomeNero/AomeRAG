@@ -270,6 +270,7 @@ export function ChatApp() {
               streamingId={streamingId}
               onRegenerate={regenerate}
               searchQuery={searchQuery}
+              sessionId={currentId}
             />
             <div className="pb-4 pt-2">
               <Composer

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Check, ChevronDown, Copy, Loader2, RefreshCw } from 'lucide-react'
+import { Check, ChevronDown, Copy, Loader2, RefreshCw, ThumbsDown, ThumbsUp } from 'lucide-react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
@@ -17,26 +17,27 @@ import hlCss from 'highlight.js/lib/languages/css'
 import hlMarkdown from 'highlight.js/lib/languages/markdown'
 import type { ChatMessage, ToolEvent } from '../../data/chat'
 import type { RetrievalHit } from '../../lib/api'
+import { submitFeedback } from '../../lib/api'
+import { cn } from '../../lib/utils'
 
 interface Props {
   messages: ChatMessage[]
   streamingId: string | null
   onRegenerate: () => void
   searchQuery: string | null
+  sessionId?: string | null
 }
 
-export function MessageList({ messages, streamingId, onRegenerate, searchQuery }: Props) {
+export function MessageList({ messages, streamingId, onRegenerate, searchQuery, sessionId }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [highlightIdx, setHighlightIdx] = useState<number | null>(null)
 
-  // auto-scroll to bottom on new content (unless a search highlight is driving the scroll)
   useEffect(() => {
     if (searchQuery) return
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [messages, searchQuery])
 
-  // locate + scroll to the first message matching the search query, and ring it
   useEffect(() => {
     if (!searchQuery) {
       setHighlightIdx(null)
@@ -53,6 +54,14 @@ export function MessageList({ messages, streamingId, onRegenerate, searchQuery }
 
   const lastAssistantId = [...messages].reverse().find((m) => m.role === 'assistant')?.id
 
+  // find the preceding user message for a given assistant message
+  const getUserQuestion = (idx: number): string => {
+    for (let i = idx - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') return messages[i].content
+    }
+    return ''
+  }
+
   return (
     <div ref={scrollRef} className="scrollbar-none flex-1 overflow-y-auto">
       <div className="mx-auto max-w-[774px] px-4 py-6">
@@ -65,6 +74,8 @@ export function MessageList({ messages, streamingId, onRegenerate, searchQuery }
             streaming={streamingId === m.id}
             isLast={m.id === lastAssistantId}
             onRegenerate={onRegenerate}
+            userQuestion={getUserQuestion(i)}
+            sessionId={sessionId}
           />
         ))}
       </div>
@@ -79,6 +90,8 @@ function Message({
   streaming,
   isLast,
   onRegenerate,
+  userQuestion,
+  sessionId,
 }: {
   m: ChatMessage
   index: number
@@ -86,10 +99,70 @@ function Message({
   streaming: boolean
   isLast: boolean
   onRegenerate: () => void
+  userQuestion: string
+  sessionId?: string | null
 }) {
   const [showDetails, setShowDetails] = useState(false)
+  const [showDownDialog, setShowDownDialog] = useState(false)
+  const [downComment, setDownComment] = useState('')
+  const [showMissingDialog, setShowMissingDialog] = useState(false)
+  const [missingText, setMissingText] = useState('')
   const hits = m.toolEvents?.flatMap((t) => t.details ?? []) ?? []
   const ring = highlight ? 'ring-2 ring-brand rounded-lg' : ''
+
+  // detect "no results": a tool_result with details === [] (empty array, search ran but 0 hits)
+  const hadEmptySearch = m.toolEvents?.some(
+    (t) => t.status === 'ok' && t.details !== undefined && t.details.length === 0
+  ) ?? false
+
+  const rate = async (rating: 'up' | 'down') => {
+    if (m.feedback) return
+    try {
+      await submitFeedback({
+        type: 'rating',
+        session_id: sessionId ?? undefined,
+        message_id: m.id,
+        rating,
+        user_question: userQuestion,
+        ai_answer: m.content,
+      })
+    } catch { /* ignore */ }
+  }
+
+  const onThumbsUp = () => { void rate('up') }
+  const onThumbsDown = () => { setShowDownDialog(true) }
+  const submitDown = async () => {
+    await rate('down')
+    if (downComment.trim()) {
+      try {
+        await submitFeedback({
+          type: 'rating',
+          session_id: sessionId ?? undefined,
+          message_id: m.id,
+          rating: 'down',
+          user_question: userQuestion,
+          ai_answer: m.content,
+          comment: downComment.trim(),
+        })
+      } catch { /* ignore */ }
+    }
+    setShowDownDialog(false)
+    setDownComment('')
+  }
+
+  const submitMissing = async () => {
+    if (!missingText.trim()) return
+    try {
+      await submitFeedback({
+        type: 'missing',
+        session_id: sessionId ?? undefined,
+        user_question: userQuestion,
+        comment: missingText.trim(),
+      })
+    } catch { /* ignore */ }
+    setShowMissingDialog(false)
+    setMissingText('')
+  }
 
   if (m.role === 'user') {
     return (
@@ -121,6 +194,53 @@ function Message({
           {m.error}
         </div>
       )}
+
+      {/* "no results" feedback button */}
+      {hadEmptySearch && !streaming && !m.error && (
+        <button
+          onClick={() => setShowMissingDialog(true)}
+          className="mt-2 rounded-lg border border-line bg-field px-3 py-1.5 text-xs text-brand transition hover:bg-hover"
+        >
+          📚 知识库没找到？点击补充信息
+        </button>
+      )}
+
+      {/* 👎 dialog */}
+      {showDownDialog && (
+        <div className="mt-2 rounded-lg border border-line bg-field p-3">
+          <textarea
+            autoFocus
+            value={downComment}
+            onChange={(e) => setDownComment(e.target.value)}
+            placeholder="哪里不好？（可选）"
+            className="h-16 w-full resize-none rounded border border-line bg-white px-2 py-1 text-sm outline-none focus:border-brand"
+          />
+          <div className="mt-2 flex justify-end gap-2">
+            <button onClick={() => { setShowDownDialog(false); setDownComment('') }} className="rounded px-3 py-1 text-sm text-muted hover:bg-hover">取消</button>
+            <button onClick={submitDown} className="rounded bg-brand px-3 py-1 text-sm text-white">提交</button>
+          </div>
+        </div>
+      )}
+
+      {/* missing-info dialog */}
+      {showMissingDialog && (
+        <div className="mt-2 rounded-lg border border-line bg-field p-3">
+          <p className="mb-2 text-sm text-foreground">你期望找到什么信息？我们会记录并改进知识库。</p>
+          <textarea
+            autoFocus
+            value={missingText}
+            onChange={(e) => setMissingText(e.target.value)}
+            placeholder="描述你需要的知识库内容…"
+            className="h-20 w-full resize-none rounded border border-line bg-white px-2 py-1 text-sm outline-none focus:border-brand"
+          />
+          <div className="mt-2 flex justify-end gap-2">
+            <button onClick={() => { setShowMissingDialog(false); setMissingText('') }} className="rounded px-3 py-1 text-sm text-muted hover:bg-hover">取消</button>
+            <button onClick={submitMissing} className="rounded bg-brand px-3 py-1 text-sm text-white">提交反馈</button>
+          </div>
+        </div>
+      )}
+
+      {/* action bar */}
       {!streaming && !m.error && (
         <div className="mt-2 flex items-center gap-1 text-muted">
           <CopyButton text={m.content} />
@@ -133,6 +253,22 @@ function Message({
               <RefreshCw className="h-4 w-4" strokeWidth={1.75} />
             </button>
           )}
+          <button
+            onClick={onThumbsUp}
+            disabled={!!m.feedback}
+            className={cn('rounded-md p-1 transition hover:bg-hover', m.feedback === 'up' && 'text-brand')}
+            title="好的回答"
+          >
+            <ThumbsUp className="h-4 w-4" strokeWidth={1.75} />
+          </button>
+          <button
+            onClick={onThumbsDown}
+            disabled={!!m.feedback}
+            className={cn('rounded-md p-1 transition hover:bg-hover', m.feedback === 'down' && 'text-red-500')}
+            title="不好的回答"
+          >
+            <ThumbsDown className="h-4 w-4" strokeWidth={1.75} />
+          </button>
         </div>
       )}
     </div>
@@ -154,7 +290,7 @@ function ToolChip({
   if (t.status === 'ok') {
     const n = t.details?.length ?? (t.content?.match(/^\[\d+\]/gm) ?? []).length
     const src = t.details?.[0]?.source_doc ?? t.content?.match(/source=([^\s>]+)/)?.[1]
-    label = n > 0 ? `知识库检索 · ${n} 条` : '知识库检索完成'
+    label = n > 0 ? `知识库检索 · ${n} 条` : '知识库检索完成（0 条）'
     if (src) label += ` · ${src}`
     icon = <Check className="h-3.5 w-3.5 text-brand" strokeWidth={2} />
     tone = 'text-foreground'

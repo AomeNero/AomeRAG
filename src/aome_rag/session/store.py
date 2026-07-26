@@ -111,6 +111,39 @@ class SessionStore:
             for r in rows
         ]
 
+    async def submit_feedback(self, data: dict[str, Any]) -> str:
+        """Insert a feedback record. Returns the feedback id."""
+        fid = uuid.uuid4().hex
+        await self._db.execute(
+            "INSERT INTO feedback(id, type, session_id, user_id, message_id, rating, "
+            "user_question, ai_answer, comment, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (
+                fid,
+                data.get("type", ""),
+                data.get("session_id"),
+                data.get("user_id", ""),
+                data.get("message_id"),
+                data.get("rating"),
+                data.get("user_question"),
+                data.get("ai_answer"),
+                data.get("comment"),
+                time.time(),
+            ),
+        )
+        await self._db.commit()
+        return fid
+
+    async def list_all_feedback(self, limit: int = 200) -> list[dict[str, Any]]:
+        """Admin: list all feedback across users."""
+        rows = await self._fetchall(
+            "SELECT id, type, session_id, user_id, message_id, rating, "
+            "user_question, ai_answer, comment, created_at "
+            "FROM feedback ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        )
+        return [dict(r) for r in rows]
+
     async def delete_session(self, session_id: str, user_id: str) -> bool:
         row = await self._fetchone(
             "SELECT user_id FROM sessions WHERE id=?", (session_id,)

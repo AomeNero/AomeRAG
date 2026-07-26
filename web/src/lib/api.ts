@@ -193,3 +193,43 @@ export async function getAllSessions(): Promise<AdminSession[]> {
   if (!r.ok) throw new Error(`/admin/sessions failed: ${r.status}`)
   return (await r.json()) as AdminSession[]
 }
+
+// ---- Feedback API ----
+
+export type FeedbackBody = {
+  type: 'rating' | 'missing'
+  session_id?: string
+  message_id?: string
+  rating?: 'up' | 'down'
+  user_question?: string
+  ai_answer?: string
+  comment?: string
+}
+
+export type FeedbackItem = {
+  id: string
+  type: string
+  session_id: string | null
+  user_id: string
+  message_id: string | null
+  rating: string | null
+  user_question: string | null
+  ai_answer: string | null
+  comment: string | null
+  created_at: number
+}
+
+export async function submitFeedback(body: FeedbackBody): Promise<void> {
+  const r = await fetch('/feedback', {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify(body),
+  })
+  if (!r.ok) throw new Error(`/feedback failed: ${r.status}`)
+}
+
+export async function getAllFeedback(): Promise<FeedbackItem[]> {
+  const r = await fetch('/admin/feedback', { headers: authHeaders() })
+  if (!r.ok) throw new Error(`/admin/feedback failed: ${r.status}`)
+  return (await r.json()) as FeedbackItem[]
+}

@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from .agent.loop import AgentLoop  # noqa: F401 - re-exported for convenience
 from .api.routes_admin import router as admin_router
 from .api.routes_chat import router as chat_router
+from .api.routes_feedback import router as feedback_router
 from .api.routes_health import router as health_router
 from .api.routes_ingest import router as ingest_router
 from .api.routes_clean import router as clean_router
@@ -124,6 +125,7 @@ def create_app(settings: Settings | None = None, *, overrides: dict | None = Non
     app.include_router(clean_router)
     app.include_router(session_router)
     app.include_router(admin_router)
+    app.include_router(feedback_router)
     # Serve the built frontend last (API routes above take precedence). Only mounts when the
     # dist dir exists; in dev the Vite server serves the frontend and this is skipped.
     _maybe_mount_frontend(app)

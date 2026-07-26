@@ -32,6 +32,20 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at   REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages (session_id, created_at);
+
+CREATE TABLE IF NOT EXISTS feedback (
+    id            TEXT PRIMARY KEY,
+    type          TEXT NOT NULL,
+    session_id    TEXT,
+    user_id       TEXT NOT NULL,
+    message_id    TEXT,
+    rating        TEXT,
+    user_question TEXT,
+    ai_answer     TEXT,
+    comment       TEXT,
+    created_at    REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback (created_at DESC);
 """
 
 
