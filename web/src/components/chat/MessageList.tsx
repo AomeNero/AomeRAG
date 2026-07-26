@@ -375,6 +375,18 @@ const mdComponents: Components = {
   blockquote: ({ node, ...props }) => (
     <blockquote className="my-2 border-l-2 border-line pl-3 text-muted" {...props} />
   ),
+  table: ({ node, ...props }) => (
+    <div className="my-3 overflow-x-auto">
+      <table className="w-full border-collapse text-sm" {...props} />
+    </div>
+  ),
+  thead: ({ node, ...props }) => <thead className="bg-field" {...props} />,
+  th: ({ node, ...props }) => (
+    <th className="border border-line px-3 py-1.5 text-left font-semibold" {...props} />
+  ),
+  td: ({ node, ...props }) => (
+    <td className="border border-line px-3 py-1.5" {...props} />
+  ),
   pre: ({ node, ...props }) => <PreBlock {...props} />,
   code: ({ node, className, children, ...props }) => {
     if (className?.includes('language-')) {

@@ -36,10 +36,23 @@ export type RetrievalHit = {
 
 const USER_KEY = 'aome_user_id'
 
+/** UUID v4 — uses crypto.randomUUID when available (HTTPS/localhost),
+ * falls back to Math.random for non-secure contexts (e.g. cpolar HTTP tunnels). */
+function uuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    const v = c === 'x' ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
+}
+
 export function getUserId(): string {
   let id = localStorage.getItem(USER_KEY)
   if (!id) {
-    id = crypto.randomUUID()
+    id = uuid()
     localStorage.setItem(USER_KEY, id)
   }
   return id
