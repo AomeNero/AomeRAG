@@ -52,9 +52,11 @@ async def ingest_dir(
     skipped: list[str] = []
     if base.is_dir():
         for p in sorted(base.rglob("*")):
+            rel = p.relative_to(base).as_posix()
+            if rel.startswith("images/") or rel == "images":
+                continue  # skip the images/ directory entirely (extracted PNGs, not docs)
             if p.is_dir():
                 continue
-            rel = p.relative_to(base).as_posix()
             if p.suffix.lower() in SUPPORTED_EXTS:
                 files.append((rel, str(p)))
             else:
