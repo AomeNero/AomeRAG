@@ -387,6 +387,14 @@ const mdComponents: Components = {
   td: ({ node, ...props }) => (
     <td className="border border-line px-3 py-1.5" {...props} />
   ),
+  img: ({ node, src, ...props }) => {
+    const fixedSrc = src?.startsWith('images/')
+      ? `/${src}`
+      : src?.startsWith('/images/')
+      ? src
+      : src
+    return <img src={fixedSrc} className="my-2 max-w-full rounded-lg" alt="" {...props} />
+  },
   pre: ({ node, ...props }) => <PreBlock {...props} />,
   code: ({ node, className, children, ...props }) => {
     if (className?.includes('language-')) {

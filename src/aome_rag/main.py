@@ -129,7 +129,15 @@ def create_app(settings: Settings | None = None, *, overrides: dict | None = Non
     # Serve the built frontend last (API routes above take precedence). Only mounts when the
     # dist dir exists; in dev the Vite server serves the frontend and this is skipped.
     _maybe_mount_frontend(app)
+    _maybe_mount_images(app)
     return app
+
+
+def _maybe_mount_images(app: FastAPI) -> None:
+    """Serve md-data/images/ at /images/ so markdown ![](images/xxx.png) can load."""
+    images_dir = Path(app.state.settings.md_data_dir) / "images"
+    if images_dir.is_dir():
+        app.mount("/images", StaticFiles(directory=str(images_dir)), name="kb-images")
 
 
 def _maybe_mount_frontend(app: FastAPI) -> None:

@@ -233,6 +233,17 @@ function SystemPanel({ stats }: { stats: SystemStats | null }) {
           <InfoRow icon="🗄️" label="库" value={stats.collection} />
         </div>
       )}
+      <div className="mt-2 border-t border-line pt-2 text-center text-[10px] text-muted">
+        <span>© 2026 AomeNero · </span>
+        <a
+          href="https://github.com/AomeNero/AomeRAG.git"
+          target="_blank"
+          rel="noreferrer"
+          className="text-brand hover:underline"
+        >
+          GitHub
+        </a>
+      </div>
     </div>
   )
 }

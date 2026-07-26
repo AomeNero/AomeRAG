@@ -227,20 +227,146 @@ AomeCode/
 
 ---
 
-## 10. 快速开始
+## 10. 新电脑搭建指南（从零开始）
 
-前置：Python 3.11+、`uv`、Node 18+、Pandoc、`ollama pull bge-m3`、DeepSeek key。
+### 10.1 系统要求
 
-```sh
-# 后端
+- **OS**：Windows 10/11、Linux、macOS
+- **Python**：3.11+（推荐 3.12）
+- **Node.js**：18+
+- **Pandoc**：3.x（docx 清洗用）
+- **Ollama**：最新版（本地 embedding 模型）
+- **Git**（克隆仓库）
+
+### 10.2 安装前置软件
+
+#### Windows（PowerShell 管理员）
+
+```powershell
+# 1. Python 3.12（如已装跳过）
+winget install Python.Python.3.12
+
+# 2. uv（Python 包管理器）
+winget install astral-sh.uv
+
+# 3. Node.js 18+
+winget install OpenJS.NodeJS.LTS
+
+# 4. Pandoc（docx 清洗）
+winget install JohnMacFarlane.Pandoc
+
+# 5. Ollama（embedding 模型运行时）
+winget install Ollama.Ollama
+
+# 6. Git
+winget install Git.Git
+```
+
+#### Linux（Ubuntu/Debian）
+
+```bash
+# Python 3.12
+sudo apt update && sudo apt install python3.12 python3.12-venv
+
+# uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Node.js 18+
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt install nodejs
+
+# Pandoc
+sudo apt install pandoc
+
+# Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Git
+sudo apt install git
+```
+
+### 10.3 拉取模型 & 获取 API Key
+
+```bash
+# 拉取 bge-m3 embedding 模型（约 1.2GB，首次需要几分钟）
+ollama pull bge-m3
+
+# 确认 Ollama 在运行
+ollama serve   # 或系统服务自动启动
+```
+
+**DeepSeek API Key**：去 [platform.deepseek.com](https://platform.deepseek.com/) 注册 → 创建 API Key → 复制。
+
+### 10.4 克隆 & 配置 & 启动
+
+```bash
+# 1. 克隆仓库
+git clone https://github.com/AomeNero/AomeRAG.git
+cd AomeRAG
+
+# 2. 创建 Python 虚拟环境 + 安装依赖
 uv venv --python 3.12
 uv pip install -e ".[dev,vec,ingest]"
-cp .env.example .env            # 填 DEEPSEEK_API_KEY 等
-uv run aomerag                  # 开 http://localhost:8000
 
-# 前端
-cd web && npm install
-npm run build                   # 构建 → 后端自动托管 dist/
+# 3. 配置环境变量
+cp .env.example .env
+# 编辑 .env，至少填入：
+#   DEEPSEEK_API_KEY=你的key
+#   DEEPSEEK_MODEL=deepseek-chat   （必须支持 function-calling）
+
+# 4. 构建前端
+cd web
+npm install
+npm run build
+cd ..
+
+# 5. 启动！
+uv run aomerag
+```
+
+打开浏览器：
+- **聊天**：http://localhost:8000
+- **管理后台**：http://localhost:8000/admin
+- **反馈管理**：http://localhost:8000/feedback
+
+### 10.5 导入知识库（首次使用）
+
+在 `/admin` 页面操作，或命令行：
+
+```bash
+# 1. 把原始文件（PDF/docx/xlsx）放到 raw/raw-data/
+# 2. 清洗 → raw/md-data/
+curl -N -X POST -H "X-User-Id: admin" http://localhost:8000/clean/dir
+
+# 3. 切片入库
+curl -N -X POST -H "X-User-Id: admin" http://localhost:8000/ingest/dir
+
+# 4. 提问测试
+curl -X POST http://localhost:8000/chat -H "X-User-Id: alice" \
+     -H "Content-Type: application/json" \
+     -d '{"message":"你好","stream":false}'
+```
+
+### 10.6 常见问题
+
+| 问题 | 解决 |
+|---|---|
+| `OPENSSL_ROOT_DIR` / httplib 安装失败 | Windows 装 [OpenSSL Win64 Dev](https://slproweb.com/products/Win32OpenSSL.html)，设 `OPENSSL_ROOT_DIR` 环境变量 |
+| Ollama 连接失败 | 确认 `ollama serve` 在跑；检查 `OLLAMA_BASE_URL`（默认 `localhost:11434`） |
+| `deepseek-v4-flash` 不支持 tools | 改 `.env` 里 `DEEPSEEK_MODEL=deepseek-chat` |
+| Pandoc not found | 确认 `pandoc` 在 PATH（终端跑 `pandoc --version` 验证） |
+| 中文乱码 | 确保终端/编辑器用 UTF-8；Windows PowerShell 跑 `chcp 65001` |
+| cpolar 穿透报 `crypto.randomUUID` | 已修复（自动 fallback）；确保重新 `npm run build` |
+| 前端页面白屏 | 确认 `npm run build` 产出了 `web/dist/`；检查 `FRONTEND_DIST` 路径 |
+
+### 10.7 开发模式（热重载）
+
+```bash
+# 终端 1：后端
+uv run aomerag
+
+# 终端 2：前端 dev server（热重载）
+cd web && npm run dev   # http://localhost:5173
 ```
 
 **数据工作流**（在 `/admin` 页面点按钮，或命令行）：
