@@ -115,7 +115,7 @@ function Message({
     (t) => t.status === 'ok' && t.details !== undefined && t.details.length === 0
   ) ?? false
 
-  const rate = async (rating: 'up' | 'down') => {
+  const rate = async (rating: 'up' | 'down', comment?: string) => {
     if (m.feedback) return
     try {
       await submitFeedback({
@@ -125,6 +125,7 @@ function Message({
         rating,
         user_question: userQuestion,
         ai_answer: m.content,
+        comment: comment?.trim() || undefined,
       })
     } catch { /* ignore */ }
   }
@@ -132,20 +133,7 @@ function Message({
   const onThumbsUp = () => { void rate('up') }
   const onThumbsDown = () => { setShowDownDialog(true) }
   const submitDown = async () => {
-    await rate('down')
-    if (downComment.trim()) {
-      try {
-        await submitFeedback({
-          type: 'rating',
-          session_id: sessionId ?? undefined,
-          message_id: m.id,
-          rating: 'down',
-          user_question: userQuestion,
-          ai_answer: m.content,
-          comment: downComment.trim(),
-        })
-      } catch { /* ignore */ }
-    }
+    await rate('down', downComment)  // single call with comment included
     setShowDownDialog(false)
     setDownComment('')
   }

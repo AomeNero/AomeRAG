@@ -229,7 +229,12 @@ export async function submitFeedback(body: FeedbackBody): Promise<void> {
 }
 
 export async function getAllFeedback(): Promise<FeedbackItem[]> {
-  const r = await fetch('/admin/feedback', { headers: authHeaders() })
+  const r = await fetch('/admin/feedback/all', { headers: authHeaders() })
   if (!r.ok) throw new Error(`/admin/feedback failed: ${r.status}`)
   return (await r.json()) as FeedbackItem[]
+}
+
+export async function deleteFeedback(id: string): Promise<void> {
+  const r = await fetch(`/admin/feedback/${id}`, { method: 'DELETE', headers: authHeaders() })
+  if (!r.ok) throw new Error(`delete feedback failed: ${r.status}`)
 }

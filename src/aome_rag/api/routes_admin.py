@@ -54,3 +54,17 @@ async def admin_spa(state=Depends(get_state)):
     if index.is_file():
         return FileResponse(str(index))
     return {"detail": "frontend not built — run `npm run build` in web/"}
+
+
+@router.get("/feedback", response_model=None)
+async def feedback_spa(state=Depends(get_state)):
+    """Serve index.html for /feedback (React Router handles client-side routing)."""
+    index = Path(state.settings.frontend_dist) / "index.html"
+    if index.is_file():
+        return FileResponse(str(index))
+    return {"detail": "frontend not built — run `npm run build` in web/"}
+    """Serve index.html for /admin (React Router handles client-side routing)."""
+    index = Path(state.settings.frontend_dist) / "index.html"
+    if index.is_file():
+        return FileResponse(str(index))
+    return {"detail": "frontend not built — run `npm run build` in web/"}

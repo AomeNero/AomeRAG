@@ -144,6 +144,11 @@ class SessionStore:
         )
         return [dict(r) for r in rows]
 
+    async def delete_feedback(self, feedback_id: str) -> bool:
+        cur = await self._db.execute("DELETE FROM feedback WHERE id=?", (feedback_id,))
+        await self._db.commit()
+        return cur.rowcount > 0
+
     async def delete_session(self, session_id: str, user_id: str) -> bool:
         row = await self._fetchone(
             "SELECT user_id FROM sessions WHERE id=?", (session_id,)

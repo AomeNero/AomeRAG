@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from .auth import User, get_current_user
@@ -34,9 +34,21 @@ async def submit_feedback(
     return {"ok": True, "id": fid}
 
 
-@router.get("/admin/feedback")
+@router.get("/admin/feedback/all")
 async def list_feedback(
     user: User = Depends(get_current_user), state=Depends(get_state)
 ) -> list[dict]:
     """Admin: list all feedback across users."""
     return await state.session_store.list_all_feedback()
+
+
+@router.delete("/admin/feedback/{feedback_id}")
+async def delete_feedback(
+    feedback_id: str,
+    user: User = Depends(get_current_user),
+    state=Depends(get_state),
+) -> dict:
+    ok = await state.session_store.delete_feedback(feedback_id)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="feedback not found")
+    return {"ok": True}

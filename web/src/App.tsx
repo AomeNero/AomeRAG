@@ -9,7 +9,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<ChatApp />} />
         <Route path="/admin" element={<AdminPage />} />
-        <Route path="/admin/feedback" element={<FeedbackPage />} />
+        <Route path="/feedback" element={<FeedbackPage />} />
       </Routes>
     </BrowserRouter>
   )

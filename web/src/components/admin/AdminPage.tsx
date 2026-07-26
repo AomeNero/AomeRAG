@@ -123,6 +123,9 @@ export function AdminPage() {
               className="h-8 w-32 rounded border border-gray-300 px-2 text-sm"
               placeholder="user-id"
             />
+            <Link to="/feedback" className="text-sm text-blue-600 hover:underline">
+              反馈管理
+            </Link>
             <Link to="/" className="text-sm text-blue-600 hover:underline">
               ← 返回聊天
             </Link>
