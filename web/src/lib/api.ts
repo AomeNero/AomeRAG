@@ -5,7 +5,7 @@ export type ChatEvent =
   | { type: 'session'; session_id: string }
   | { type: 'token'; text: string }
   | { type: 'tool_start'; tool_call_id: string; name: string; arguments: Record<string, unknown> }
-  | { type: 'tool_result'; tool_call_id: string; name: string; is_error: boolean; content: string; details?: RetrievalHit[] }
+  | { type: 'tool_result'; tool_call_id: string; name: string; is_error: boolean; content: string; details?: RetrievalHit[]; cancelled?: boolean }
   | { type: 'clarify'; question: string }
   | { type: 'final' }
   | { type: 'error'; code: string; message: string }
@@ -24,7 +24,11 @@ export type Session = {
   updated_at: number
 }
 
-export type HistoryMessage = { role: 'user' | 'assistant'; text: string }
+export type HistoryMessage = {
+  role: 'user' | 'assistant'
+  text: string
+  toolEvents?: { id: string; name: string; status: 'ok' | 'error'; content: string }[]
+}
 
 export type RetrievalHit = {
   source_doc: string
@@ -49,7 +53,7 @@ function uuid(): string {
   })
 }
 
-export function getUserId(): string {
+function getUserId(): string {
   let id = localStorage.getItem(USER_KEY)
   if (!id) {
     id = uuid()
@@ -205,6 +209,12 @@ export async function getAllSessions(): Promise<AdminSession[]> {
   const r = await fetch('/admin/sessions', { headers: authHeaders() })
   if (!r.ok) throw new Error(`/admin/sessions failed: ${r.status}`)
   return (await r.json()) as AdminSession[]
+}
+
+export async function getAdminMessages(sessionId: string): Promise<HistoryMessage[]> {
+  const r = await fetch(`/admin/sessions/${sessionId}/messages`, { headers: authHeaders() })
+  if (!r.ok) throw new Error(`/admin/sessions/${sessionId}/messages failed: ${r.status}`)
+  return (await r.json()) as HistoryMessage[]
 }
 
 // ---- Feedback API ----

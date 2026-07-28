@@ -34,6 +34,7 @@ export function ChatApp() {
 
   const abortRef = useRef<AbortController | null>(null)
   const currentIdRef = useRef<string | null>(null)
+  const turnStartRef = useRef<number | null>(null)
   const counter = useRef(0)
   const nextId = (p: string) => `${p}-${counter.current++}`
 
@@ -69,7 +70,13 @@ export function ChatApp() {
     try {
       const history = await getMessages(id)
       setMessages(
-        history.map((m, i) => ({ id: `${id}-${i}`, role: m.role, content: m.text })),
+        history.map((m, i) => ({
+          id: `${id}-${i}`,
+          role: m.role,
+          content: m.text,
+          toolEvents: m.toolEvents,
+          isClarify: m.toolEvents?.some((t) => t.name === 'clarify') ?? undefined,
+        })),
       )
     } catch {
       setMessages([])
@@ -125,6 +132,7 @@ export function ChatApp() {
         )
         break
       case 'tool_start':
+        if (!turnStartRef.current) turnStartRef.current = performance.now()
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
@@ -147,7 +155,10 @@ export function ChatApp() {
               t.id === ev.tool_call_id
                 ? {
                     ...t,
-                    status: (ev.is_error ? 'error' : 'ok') as 'ok' | 'error',
+                    status: (ev.cancelled ? 'cancelled' : ev.is_error ? 'error' : 'ok') as
+                      | 'ok'
+                      | 'error'
+                      | 'cancelled',
                     content: ev.content,
                     details: ev.details,
                   }
@@ -170,6 +181,13 @@ export function ChatApp() {
         )
         break
       case 'final':
+        if (turnStartRef.current) {
+          const elapsed = (performance.now() - turnStartRef.current) / 1000
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, turnElapsed: elapsed } : m)),
+          )
+          turnStartRef.current = null
+        }
         break
     }
   }

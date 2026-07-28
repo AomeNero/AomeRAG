@@ -175,7 +175,11 @@ dense + FTS 双通道 → RRF 融合 → top_k Hit（带 source_doc/heading_path
 - **知识库缺失补充**：kb_search 返回 0 条时显示「点击补充」按钮 → 用户输入期望找到的内容。
 - `POST /feedback` 提交；`GET /admin/feedback/all` 列出（admin）；`DELETE /admin/feedback/{id}` 删除。
 
-**SSE 事件**：`session` / `token` / `tool_start` / `tool_result`（含 `details` 结构化命中）/ `clarify` / `final` / `error`。
+**SSE 事件**：`session` / `token` / `tool_start` / `tool_result`（含 `details` 结构化命中 + `cancelled` 标记）/ `clarify` / `final` / `error`。
+
+**检索 UI**：搜索中显示「正在检索」；回复完成后统一显示「知识库检索 · N 条 · 用时 X.X 秒」+ 可折叠详情面板（chevron 箭头）。
+
+**消息持久化**：clarify 问题文本写入 assistant 消息 blocks，回看历史时 toolEvents 从 ToolUseBlock + ToolResultBlock 重建。
 
 ---
 
@@ -321,7 +325,8 @@ npm run build
 cd ..
 
 # 5. 启动！
-uv run aomerag
+uv run aomerag                # 默认 http://localhost:8000
+# 部署时：uv run aomerag --host 0.0.0.0
 ```
 
 打开浏览器：
@@ -434,3 +439,5 @@ uv run pytest -q -m live         # 真 DeepSeek/Ollama
 12. **三步协议**：clarify → load_skill → kb_search；MAX_ITERATIONS=12。
 13. **系统提示词外置** `prompt/system-prompt.md`（可手编、实时生效）。
 14. **反馈系统**：👍/👎 + 缺失补充 → SQLite → /feedback 管理。
+15. **检索 UI**：整体用时计时 + 可折叠详情面板；EndTurn 取消的工具标记 `cancelled`。
+16. **消息持久化**：clarify 问题写入 blocks；回看历史从 ToolUseBlock + ToolResultBlock 重建 toolEvents。

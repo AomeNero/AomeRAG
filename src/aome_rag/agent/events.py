@@ -26,6 +26,7 @@ class ToolResultEvent(BaseModel):
     is_error: bool
     content: str
     details: list[dict[str, Any]] | None = None  # structured hits for the UI (kb_search)
+    cancelled: bool = False  # true when EndTurn cancelled this tool before it completed
 
 
 class ClarifyEvent(BaseModel):

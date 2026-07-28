@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Check, ChevronDown, Copy, Loader2, RefreshCw, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { Check, Copy, Loader2, RefreshCw, ThumbsDown, ThumbsUp } from 'lucide-react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
@@ -155,7 +155,7 @@ function Message({
   if (m.role === 'user') {
     return (
       <div data-midx={index} className={`mb-6 flex justify-end p-px ${ring}`}>
-        <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl bg-field px-4 py-2.5 text-[15px] leading-7 text-foreground">
+        <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl bg-[#e4edfd] px-4 py-2.5 text-[15px] leading-7 text-foreground">
           {m.content}
         </div>
       </div>
@@ -170,12 +170,16 @@ function Message({
         </div>
       )}
       {m.toolEvents?.map((t) => (
-        <ToolChip key={t.id} t={t} clickable={!!t.details} onClick={() => setShowDetails((v) => !v)} />
+        <ToolChip key={t.id} t={t} expanded={showDetails} clickable={!!t.details} onClick={() => setShowDetails((v) => !v)} elapsed={m.turnElapsed} />
       ))}
       {showDetails && hits.length > 0 && <DetailsPanel hits={hits} />}
       <div className="text-[15px] leading-7 text-foreground">
-        {m.content ? <Markdown text={m.content} /> : null}
-        {streaming && !m.error && <Cursor />}
+        {m.content ? (
+          <Markdown text={m.content} />
+        ) : streaming && !m.error ? (
+          <ThinkingDots />
+        ) : null}
+        {streaming && m.content && !m.error && <Cursor />}
       </div>
       {m.error && (
         <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
@@ -229,7 +233,7 @@ function Message({
       )}
 
       {/* action bar */}
-      {!streaming && !m.error && (
+      {!streaming && !m.error && m.content.trim() && (
         <div className="mt-2 flex items-center gap-1 text-muted">
           <CopyButton text={m.content} />
           {isLast && (
@@ -263,25 +267,52 @@ function Message({
   )
 }
 
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={`h-3 w-3 opacity-60 transition-transform ${expanded ? 'rotate-180' : ''}`}
+    >
+      <path
+        d="M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382 5.55843 8.90706 5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732 6.59876 8.24849 6.74023 8.3623C6.87291 8.46904 6.92272 8.47813 6.9375 8.48047C6.97895 8.48703 7.02105 8.48703 7.0625 8.48047C7.07728 8.47813 7.12709 8.46904 7.25977 8.3623C7.40124 8.24849 7.57405 8.07732 7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
 function ToolChip({
   t,
+  expanded,
   clickable,
   onClick,
+  elapsed,
 }: {
   t: ToolEvent
+  expanded: boolean
   clickable: boolean
   onClick: () => void
+  elapsed?: number
 }) {
-  let label = '检索知识库'
+  let label = '正在检索'
   let icon: ReactNode = <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" strokeWidth={2} />
   let tone = 'text-muted'
   if (t.status === 'ok') {
     const n = t.details?.length ?? (t.content?.match(/^\[\d+\]/gm) ?? []).length
     const src = t.details?.[0]?.source_doc ?? t.content?.match(/source=([^\s>]+)/)?.[1]
     label = n > 0 ? `知识库检索 · ${n} 条` : '知识库检索完成（0 条）'
+    if (elapsed != null) label += ` · 用时 ${elapsed.toFixed(1)} 秒`
     if (src) label += ` · ${src}`
     icon = <Check className="h-3.5 w-3.5 text-brand" strokeWidth={2} />
     tone = 'text-foreground'
+  } else if (t.status === 'cancelled') {
+    label = '已跳过'
+    icon = <span className="text-muted">⊘</span>
+    tone = 'text-muted'
   } else if (t.status === 'error') {
     label = '知识库检索失败'
     icon = <span className="text-red-500">⚠</span>
@@ -300,10 +331,10 @@ function ToolChip({
     )
   }
   return (
-    <button onClick={onClick} className={cls} title="点击查看检索详情">
+    <button onClick={onClick} className={cls} title="点击展开/收起检索详情">
       {icon}
       <span>{label}</span>
-      <ChevronDown className="h-3 w-3 opacity-60" strokeWidth={2} />
+      <ChevronIcon expanded={expanded} />
     </button>
   )
 }
@@ -347,6 +378,16 @@ function HitCard({ h }: { h: RetrievalHit }) {
 function Cursor() {
   return (
     <span className="ml-0.5 inline-block h-[1.05em] w-[3px] translate-y-[2px] animate-pulse rounded-sm bg-brand" />
+  )
+}
+
+function ThinkingDots() {
+  return (
+    <div className="flex items-center gap-1 py-1">
+      <span className="inline-block h-2 w-2 animate-[bounce_1.4s_infinite] rounded-full bg-brand/40" style={{ animationDelay: '0s' }} />
+      <span className="inline-block h-2 w-2 animate-[bounce_1.4s_infinite] rounded-full bg-brand/40" style={{ animationDelay: '0.2s' }} />
+      <span className="inline-block h-2 w-2 animate-[bounce_1.4s_infinite] rounded-full bg-brand/40" style={{ animationDelay: '0.4s' }} />
+    </div>
   )
 }
 

@@ -18,7 +18,7 @@ def main() -> None:
         description="Run the AomeRAG backend (FastAPI + uvicorn). Workers locked to 1 "
         "(Zvec writes are single-process exclusive).",
     )
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", default="localhost")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--reload", action="store_true", help="auto-reload on code changes (dev)")
     args = parser.parse_args()

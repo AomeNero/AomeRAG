@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from aome_rag.providers.messages import Message
@@ -47,7 +49,34 @@ async def get_messages(
     session_id: str, user: User = Depends(get_current_user), state=Depends(get_state)
 ) -> list[dict]:
     msgs = await state.session_store.get_messages(session_id, user.id)
-    return [{"role": m.role, "text": m.as_text()} for m in msgs]
+    return _messages_to_dicts(msgs)
+
+
+def _messages_to_dicts(msgs: list[Message]) -> list[dict]:
+    """Convert messages to API shape. Reconstructs toolEvents by pairing
+    assistant tool_use blocks with the following tool message's tool_result blocks."""
+    result: list[dict] = []
+    # Build a lookup: tool_use_id → ToolResultBlock
+    result_blocks: dict[str, Any] = {}
+    for m in msgs:
+        for b in m.tool_results():
+            result_blocks[b.tool_use_id] = b
+
+    for m in msgs:
+        d: dict = {"role": m.role, "text": m.as_text()}
+        tool_uses = m.tool_uses()
+        if tool_uses:
+            d["toolEvents"] = []
+            for tu in tool_uses:
+                tr = result_blocks.get(tu.id)
+                d["toolEvents"].append({
+                    "id": tu.id,
+                    "name": tu.name,
+                    "status": "error" if (tr and tr.is_error) else "ok",
+                    "content": tr.content if tr else "",
+                })
+        result.append(d)
+    return result
 
 
 @router.delete("/sessions/{session_id}")

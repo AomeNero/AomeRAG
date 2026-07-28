@@ -163,7 +163,10 @@ class AgentLoop:
         self, calls: list[dict[str, Any]], history: list[Message]
     ) -> tuple[list[StreamEvent], bool]:
         """Run tool calls concurrently; return their events and whether the turn should end
-        (a skill raised EndTurn). Parse-failed calls yield error results directly."""
+        (a skill raised EndTurn). Parse-failed calls yield error results directly.
+
+        When any skill raises EndTurn (e.g. clarify), return immediately instead of
+        waiting for slower concurrent tasks (e.g. kb_search) to finish."""
         events: list[StreamEvent] = []
         errored = [c for c in calls if c["error"]]
         valid = [c for c in calls if not c["error"]]
@@ -185,32 +188,80 @@ class AgentLoop:
             )
 
         if valid:
-            outcomes = await asyncio.gather(*[self._run_one(c) for c in valid])
-            for c, (ctx, kind, payload) in zip(valid, outcomes, strict=True):
-                events.extend(ctx.pending)
-                if kind == "endturn":
-                    events.append(FinalEvent())
-                    return events, True
-                is_error = kind == "error"
-                events.append(
-                    ToolResultEvent(
-                        tool_call_id=c["id"],
-                        name=c["name"],
-                        is_error=is_error,
-                        content=payload,
-                        details=getattr(ctx, "details", None),
-                    )
-                )
-                history.append(
-                    Message(
-                        role="tool",
-                        blocks=[
-                            ToolResultBlock(
-                                tool_use_id=c["id"], content=payload, is_error=is_error
+            async def _wrap(c: dict[str, Any]):
+                return c, await self._run_one(c)
+
+            task_to_call: dict[asyncio.Task, dict[str, Any]] = {}
+            tasks: set[asyncio.Task] = set()
+            for c in valid:
+                t = asyncio.create_task(_wrap(c))
+                task_to_call[t] = c
+                tasks.add(t)
+            while tasks:
+                done, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                for t in done:
+                    c, (ctx, kind, payload) = t.result()
+                    events.extend(ctx.pending)
+                    if kind == "endturn":
+                        # Write the clarify question back into the assistant message
+                        # so it survives persistence (ClarifyEvent is ephemeral/SSE-only).
+                        assistant_msg = history[-1]
+                        if c["name"] == "clarify":
+                            q = c.get("args", {}).get("question", "")
+                            if q:
+                                assistant_msg.blocks.insert(0, TextBlock(text=q))
+                        # Add a ToolResultBlock for the clarify tool so it persists
+                        assistant_msg.blocks.append(
+                            ToolResultBlock(tool_use_id=c["id"], content="", is_error=False)
+                        )
+                        # Mark the clarify tool as completed so the frontend closes its spinner
+                        events.append(
+                            ToolResultEvent(
+                                tool_call_id=c["id"],
+                                name=c["name"],
+                                is_error=False,
+                                content="",
                             )
-                        ],
+                        )
+                        # Cancel remaining tasks and mark them so the frontend can close their spinners
+                        for remaining in tasks:
+                            remaining.cancel()
+                            rc = task_to_call[remaining]
+                            # Persist the cancelled tool result so it survives reload
+                            assistant_msg.blocks.append(
+                                ToolResultBlock(tool_use_id=rc["id"], content="", is_error=False)
+                            )
+                            events.append(
+                                ToolResultEvent(
+                                    tool_call_id=rc["id"],
+                                    name=rc["name"],
+                                    is_error=False,
+                                    content="",
+                                    cancelled=True,
+                                )
+                            )
+                        events.append(FinalEvent())
+                        return events, True
+                    is_error = kind == "error"
+                    events.append(
+                        ToolResultEvent(
+                            tool_call_id=c["id"],
+                            name=c["name"],
+                            is_error=is_error,
+                            content=payload,
+                            details=getattr(ctx, "details", None),
+                        )
                     )
-                )
+                    history.append(
+                        Message(
+                            role="tool",
+                            blocks=[
+                                ToolResultBlock(
+                                    tool_use_id=c["id"], content=payload, is_error=is_error
+                                )
+                            ],
+                        )
+                    )
         return events, False
 
     async def _run_one(
