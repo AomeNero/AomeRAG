@@ -29,6 +29,8 @@ def test_prod_serves_index_and_api_still_works(tmp_path) -> None:
         r = client.get("/")
         assert r.status_code == 200
         assert "spa" in r.text
+        # HTML entry must be revalidated: stale index.html → old hashed assets → 404 (unstyled)
+        assert r.headers.get("cache-control") == "no-cache"
         # API routes are registered before the catch-all mount, so they still win
         assert client.get("/health").json() == {"status": "ok"}
 

@@ -119,6 +119,16 @@ def create_app(settings: Settings | None = None, *, overrides: dict | None = Non
     app = FastAPI(title="AomeRAG", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings or get_settings()
     app.state._overrides = overrides or {}
+
+    @app.middleware("http")
+    async def _html_no_cache(request, call_next):
+        # HTML 入口（index.html / /admin）不缓存：重建前端后资源 hash 会变，若浏览器
+        # 缓存了旧 index.html 会引用旧资源名 → 404 → 白屏/无样式。API 是 JSON，不受影响。
+        response = await call_next(request)
+        if response.headers.get("content-type", "").startswith("text/html"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     app.include_router(health_router)
     app.include_router(chat_router)
     app.include_router(ingest_router)
