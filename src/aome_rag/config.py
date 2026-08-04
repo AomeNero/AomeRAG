@@ -7,13 +7,17 @@ A `.env` file in the project root is loaded if present.
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Project root: two levels up from src/aome_rag/config.py → D:\Code\AomeCode
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_PROJECT_ROOT / ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -61,6 +65,16 @@ class Settings(BaseSettings):
     frontend_dist: str = "./web/dist"
 
     log_level: str = "INFO"
+
+    def model_post_init(self, __context: object) -> None:
+        """Resolve relative paths against the project root so CWD doesn't matter."""
+        for field in (
+            "zvec_path", "sqlite_path", "skills_dir",
+            "raw_data_dir", "md_data_dir", "frontend_dist",
+        ):
+            p = Path(getattr(self, field))
+            if not p.is_absolute():
+                setattr(self, field, str(_PROJECT_ROOT / p))
 
 
 @lru_cache(maxsize=1)

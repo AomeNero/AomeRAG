@@ -67,6 +67,17 @@ class SessionStore:
         )
         return [Message.model_validate_json(r["content_json"]) for r in rows]
 
+    async def get_messages_admin(
+        self, session_id: str, limit: int = 100
+    ) -> list[Message]:
+        """Admin: fetch messages for any session (no user scoping)."""
+        rows = await self._fetchall(
+            "SELECT content_json FROM messages "
+            "WHERE session_id=? ORDER BY created_at LIMIT ?",
+            (session_id, limit),
+        )
+        return [Message.model_validate_json(r["content_json"]) for r in rows]
+
     async def append_message(
         self, session_id: str, user_id: str, msg: Message
     ) -> None:

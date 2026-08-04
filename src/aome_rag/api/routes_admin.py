@@ -47,22 +47,19 @@ async def list_all_sessions(
     return await state.session_store.list_all_sessions()
 
 
+@router.get("/admin/sessions/{session_id}/messages")
+async def admin_get_messages(
+    session_id: str,
+    user: User = Depends(get_current_user),
+    state=Depends(get_state),
+) -> list[dict]:
+    """Admin: get messages for any session (no user scoping)."""
+    msgs = await state.session_store.get_messages_admin(session_id)
+    return [{"role": m.role, "text": m.as_text()} for m in msgs]
+
+
 @router.get("/admin", response_model=None)
 async def admin_spa(state=Depends(get_state)):
-    """Serve index.html for /admin (React Router handles client-side routing)."""
-    index = Path(state.settings.frontend_dist) / "index.html"
-    if index.is_file():
-        return FileResponse(str(index))
-    return {"detail": "frontend not built — run `npm run build` in web/"}
-
-
-@router.get("/feedback", response_model=None)
-async def feedback_spa(state=Depends(get_state)):
-    """Serve index.html for /feedback (React Router handles client-side routing)."""
-    index = Path(state.settings.frontend_dist) / "index.html"
-    if index.is_file():
-        return FileResponse(str(index))
-    return {"detail": "frontend not built — run `npm run build` in web/"}
     """Serve index.html for /admin (React Router handles client-side routing)."""
     index = Path(state.settings.frontend_dist) / "index.html"
     if index.is_file():
