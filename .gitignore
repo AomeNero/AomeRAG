@@ -14,3 +14,8 @@ dist/
 raw/
 # 第三方参考文档（非本项目代码）
 learn-claude-code.md
+
+# 部署构建产物（便携包，体积大，不入库）
+deploy/out/
+# graphify 生成的知识图谱
+graphify-out/
