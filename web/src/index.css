@@ -65,3 +65,9 @@ body {
 .scrollbar-none::-webkit-scrollbar {
   display: none;
 }
+
+/* 思考中弹跳动画 */
+@keyframes bounce {
+  0%, 80%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-6px); }
+}

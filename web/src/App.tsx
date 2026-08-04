@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { ChatApp } from './components/chat/ChatApp'
 import { AdminPage } from './components/admin/AdminPage'
-import { FeedbackPage } from './components/admin/FeedbackPage'
 
 export default function App() {
   return (
@@ -9,7 +8,6 @@ export default function App() {
       <Routes>
         <Route path="/" element={<ChatApp />} />
         <Route path="/admin" element={<AdminPage />} />
-        <Route path="/feedback" element={<FeedbackPage />} />
       </Routes>
     </BrowserRouter>
   )

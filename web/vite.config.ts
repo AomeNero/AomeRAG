@@ -10,6 +10,7 @@ const API_PREFIXES = ['/chat', '/sessions', '/ingest', '/health', '/readyz', '/s
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
+    host: '0.0.0.0',
     proxy: Object.fromEntries(
       API_PREFIXES.map((p) => [p, { target: BACKEND, changeOrigin: true }]),
     ),
