@@ -3,6 +3,8 @@ messages to the session store (best-effort, in finally)."""
 
 from __future__ import annotations
 
+import structlog
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
@@ -13,6 +15,8 @@ from aome_rag.agent.events import (
     ToolResultEvent,
     ToolStartEvent,
 )
+
+_log = structlog.get_logger()
 from aome_rag.agent.loop import AgentLoop
 from aome_rag.providers.messages import Message
 from aome_rag.services import Services
@@ -41,6 +45,7 @@ async def chat(
 ):
     sid = req.session_id or await state.session_store.create_session(user.id)
     history = await state.session_store.get_messages(sid, user.id)
+    _log.info("chat.request", session_id=sid, stream=req.stream, user=user.id)
     services = Services(
         retriever=state.retriever,
         session_store=state.session_store,
@@ -65,6 +70,7 @@ async def chat(
             try:
                 async for ev in loop.run(history, req.message):
                     yield sse_event(ev.model_dump())
+                _log.info("chat.stream.done", session_id=sid)
             finally:
                 await _persist(state, sid, user, history[orig:])
 
@@ -92,6 +98,10 @@ async def chat(
     finally:
         await _persist(state, sid, user, history[orig:])
 
+    _log.info(
+        "chat.answer.done", session_id=sid,
+        answer_len=len(answer), error=bool(error), n_tool_events=len(tool_events),
+    )
     return {
         "session_id": sid,
         "answer": "".join(answer),

@@ -18,11 +18,15 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import structlog
+
 from ..retrieval.embedder import OllamaEmbedder
 from ..retrieval.store import ZvecStore
 from .chunker import Chunker
 from .hashing import chunk_id, content_hash
 from .parser import Parser, UnsupportedFile
+
+_log = structlog.get_logger()
 
 
 @dataclass
@@ -139,6 +143,10 @@ class IngestionPipeline:
                 report.n_failed += 1
                 report.errors.append(f"{doc.filename}: {e}")
         report.elapsed_s = time.monotonic() - t0
+        _log.info(
+            "ingest.done", n_docs=report.n_docs, n_chunks=report.n_chunks,
+            n_failed=report.n_failed, elapsed_s=round(report.elapsed_s, 2),
+        )
         return report
 
     async def ingest_files(
@@ -160,6 +168,7 @@ class IngestionPipeline:
                 await self._delete_and_upsert(source_doc, chunks)
                 report.n_docs += 1
                 report.n_chunks += len(chunks)
+                _log.info("ingest.file", source_doc=source_doc, n_chunks=len(chunks))
                 yield {
                     "type": "file_done",
                     "source_doc": source_doc,
@@ -175,6 +184,7 @@ class IngestionPipeline:
             except Exception as e:  # noqa: BLE001 - one bad file must not abort the batch
                 report.n_failed += 1
                 report.errors.append(f"{source_doc}: {e}")
+                _log.warning("ingest.file.failed", source_doc=source_doc, error=str(e))
                 yield {
                     "type": "file_done",
                     "source_doc": source_doc,
@@ -183,6 +193,10 @@ class IngestionPipeline:
                     "error": str(e),
                 }
         report.elapsed_s = time.monotonic() - t0
+        _log.info(
+            "ingest.files.done", n_docs=report.n_docs, n_chunks=report.n_chunks,
+            n_failed=report.n_failed, elapsed_s=round(report.elapsed_s, 2),
+        )
         yield {
             "type": "summary",
             "n_docs": report.n_docs,
@@ -318,6 +332,11 @@ class IngestionPipeline:
         if self._ingest_state is not None:
             await self._ingest_state.save_all(new_state)
 
+        _log.info(
+            "ingest.incremental.done", n_ingested=n_ingested,
+            n_skipped=n_skipped, n_deleted=n_deleted,
+            elapsed_s=round(time.monotonic() - t0, 2),
+        )
         yield {
             "type": "summary",
             "n_ingested": n_ingested,

@@ -8,11 +8,14 @@ import uuid
 from typing import Any
 
 import aiosqlite
+import structlog
 
 from aome_rag.providers.messages import Message
 
 from .db import write_with_retry
 from .models import SessionMeta
+
+_log = structlog.get_logger()
 
 
 class SessionNotFound(KeyError):
@@ -59,6 +62,7 @@ class SessionStore:
             await self._db.commit()
 
         await write_with_retry(self._db, _do)
+        _log.info("session.created", session_id=sid, user_id=user_id)
         return sid
 
     async def get_messages(
@@ -112,6 +116,7 @@ class SessionStore:
             await self._db.commit()
 
         await write_with_retry(self._db, _do)
+        _log.info("session.message", session_id=session_id, role=msg.role)
 
     async def list_all_sessions(self, limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
         """Admin: list sessions across ALL users (not scoped)."""
@@ -174,6 +179,7 @@ class SessionStore:
             await self._db.commit()
 
         await write_with_retry(self._db, _do)
+        _log.info("session.feedback", feedback_id=fid, feedback_type=data.get("type"))
         return True
 
     async def delete_session(self, session_id: str, user_id: str) -> bool:
@@ -189,6 +195,7 @@ class SessionStore:
             await self._db.commit()
 
         await write_with_retry(self._db, _do)
+        _log.info("session.deleted", session_id=session_id)
         return True
 
     async def set_title(self, session_id: str, user_id: str, title: str) -> bool:

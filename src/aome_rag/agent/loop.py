@@ -11,6 +11,8 @@ import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
+import structlog
+
 from aome_rag.providers.base import Finish, LLMDelta, LLMProvider, TextDelta, ToolCallDelta
 from aome_rag.providers.errors import ToolCallParseError
 from aome_rag.providers.messages import Message, TextBlock, ToolResultBlock, ToolUseBlock
@@ -27,6 +29,8 @@ from .events import (
 from ..providers.openai_compat import parse_tool_arguments
 from ..tools.base import EndTurn, SkillContext
 from ..tools.registry import SkillRegistry
+
+_log = structlog.get_logger()
 
 
 class AgentLoop:
@@ -63,6 +67,10 @@ class AgentLoop:
         if self.sem_agent is not None:
             await self.sem_agent.acquire()
         try:
+            _log.info(
+                "agent.turn",
+                session_id=self.session_id, model=self.model, max_iterations=self.max_iterations,
+            )
             history.append(Message.text("user", user_message))
             system_msg = Message(
                 role="system",
@@ -72,7 +80,7 @@ class AgentLoop:
                     )
                 ],
             )
-            for _ in range(self.max_iterations):
+            for it in range(self.max_iterations):
                 msgs = [system_msg, *history]
                 text_parts: list[str] = []
                 acc: dict[int, dict[str, Any]] = {}
@@ -95,6 +103,7 @@ class AgentLoop:
                 text = "".join(text_parts)
 
                 if not calls:
+                    _log.info("agent.turn.done", session_id=self.session_id, n_iterations=it + 1)
                     blocks: list[Any] = [TextBlock(text=text)] if text else []
                     history.append(Message(role="assistant", blocks=blocks))
                     yield FinalEvent()
@@ -116,6 +125,10 @@ class AgentLoop:
                 if stop:
                     return
 
+            _log.warning(
+                "agent.turn.max_iter", session_id=self.session_id,
+                n_iterations=self.max_iterations,
+            )
             yield ErrorEvent(
                 code="max_iter", message=f"exceeded {self.max_iterations} iterations"
             )
@@ -188,6 +201,12 @@ class AgentLoop:
             )
 
         if valid:
+            _log.info(
+                "agent.tools.dispatch", session_id=self.session_id,
+                n_valid=len(valid), n_errored=len(errored),
+                tools=[c["name"] for c in valid],
+            )
+
             async def _wrap(c: dict[str, Any]):
                 return c, await self._run_one(c)
 
@@ -272,8 +291,20 @@ class AgentLoop:
         )
         try:
             result = await self.skills.dispatch(c["name"], ctx, **c["args"])
+            _log.info(
+                "agent.tool.result", session_id=self.session_id,
+                tool=c["name"], kind="ok", result_len=len(result or ""),
+            )
             return ctx, "ok", result
         except EndTurn:
+            _log.info(
+                "agent.tool.result", session_id=self.session_id,
+                tool=c["name"], kind="endturn",
+            )
             return ctx, "endturn", ""
         except Exception as e:  # noqa: BLE001 - surface as a tool error so the model can react
+            _log.warning(
+                "agent.tool.result", session_id=self.session_id,
+                tool=c["name"], kind="error", error=str(e),
+            )
             return ctx, "error", f"tool '{c['name']}' failed: {e}"

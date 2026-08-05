@@ -66,11 +66,18 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    # ---- File logging (logs/app/ + logs/access/, daily rotation) ----
+    log_dir: str = "./logs"
+    log_to_file: bool = True  # master switch; False → console only
+    log_app_to_file: bool = True  # app + uvicorn lifecycle/error logs
+    log_access_to_file: bool = True  # uvicorn per-request access logs
+    log_retention_days: int = 30  # daily files kept, then auto-deleted
+
     def model_post_init(self, __context: object) -> None:
         """Resolve relative paths against the project root so CWD doesn't matter."""
         for field in (
             "zvec_path", "sqlite_path", "skills_dir",
-            "raw_data_dir", "md_data_dir", "frontend_dist",
+            "raw_data_dir", "md_data_dir", "frontend_dist", "log_dir",
         ):
             p = Path(getattr(self, field))
             if not p.is_absolute():

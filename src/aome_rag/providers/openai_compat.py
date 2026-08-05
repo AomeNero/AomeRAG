@@ -11,12 +11,16 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
+import structlog
+
 from .base import Finish, LLMDelta, LLMResponse, TextDelta, TokenUsage, ToolCallDelta
 from .errors import ToolCallParseError
 from .http_client import HttpRetryClient
 from .messages import Message, TextBlock, ToolResultBlock, ToolUseBlock
 
 _CHAT_PATH = "/chat/completions"
+
+_log = structlog.get_logger()
 
 
 def parse_tool_arguments(raw: str) -> dict[str, Any]:
@@ -186,13 +190,25 @@ class OpenAICompatProvider:
         temperature: float = 0.0,
         max_tokens: int | None = None,
     ) -> LLMResponse:
+        _log.info(
+            "llm.complete", model=model or self._model,
+            n_messages=len(messages), n_tools=len(tools),
+        )
         data = await self._http.post_json(
             _CHAT_PATH,
             self._payload(
                 messages, tools, temperature=temperature, max_tokens=max_tokens, stream=False
             ),
         )
-        return response_to_llm_response(data)
+        resp = response_to_llm_response(data)
+        usage = resp.usage
+        _log.info(
+            "llm.complete.done", model=model or self._model,
+            finish_reason=resp.finish_reason,
+            input_tokens=usage.input_tokens if usage else None,
+            output_tokens=usage.output_tokens if usage else None,
+        )
+        return resp
 
     async def stream(
         self,
@@ -202,6 +218,10 @@ class OpenAICompatProvider:
         model: str | None = None,
         temperature: float = 0.0,
     ) -> AsyncIterator[LLMDelta]:
+        _log.info(
+            "llm.stream", model=model or self._model,
+            n_messages=len(messages), n_tools=len(tools),
+        )
         payload = self._payload(
             messages, tools, temperature=temperature, max_tokens=None, stream=True
         )

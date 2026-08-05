@@ -13,9 +13,13 @@ from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import structlog
+
 from .cleaner import SUPPORTED_EXTS, Converter
 from .frontmatter import build_front_matter
 from .images import process_images
+
+_log = structlog.get_logger()
 
 
 def _read_bytes(path: str) -> bytes:
@@ -101,10 +105,12 @@ class CleaningPipeline:
                 if media_dir and media_dir.is_dir():
                     shutil.rmtree(media_dir, ignore_errors=True)
                 n_ok += 1
+                _log.info("clean.file", source_doc=rel, status="ok")
                 yield {"type": "file_done", "source_doc": rel, "status": "ok"}
             except Exception as e:
                 n_failed += 1
                 errors.append(f"{rel}: {e}")
+                _log.warning("clean.file", source_doc=rel, status="error", error=str(e))
                 yield {
                     "type": "file_done",
                     "source_doc": rel,
@@ -112,6 +118,10 @@ class CleaningPipeline:
                     "error": str(e),
                 }
 
+        _log.info(
+            "clean.done", n_docs=n_ok, n_failed=n_failed,
+            elapsed_s=round(time.monotonic() - t0, 2),
+        )
         yield {
             "type": "summary",
             "n_docs": n_ok,
@@ -223,6 +233,11 @@ class CleaningPipeline:
         if self._clean_state is not None:
             await self._clean_state.save_all(new_state)
 
+        _log.info(
+            "clean.incremental.done", n_cleaned=n_cleaned, n_skipped=n_skipped,
+            n_failed=n_failed, n_deleted=len(set(prev) - scanned),
+            elapsed_s=round(time.monotonic() - t0, 2),
+        )
         yield {
             "type": "summary",
             "n_cleaned": n_cleaned,

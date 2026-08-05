@@ -336,7 +336,16 @@ uv run aomerag                # 默认 http://localhost:8000
 - **管理后台**：http://localhost:8000/admin
 - **反馈管理**：http://localhost:8000/feedback
 
-### 10.5 导入知识库（首次使用）
+### 10.5 日志
+
+默认写入 `logs/`（`LOG_DIR` 可改，`LOG_TO_FILE=false` 可关）：
+
+- `logs/app/*.log`：应用日志（按 api/agent/retrieval/ingestion/cleaning/session 等模块分包）+ uvicorn 生命周期/错误日志
+- `logs/access/*.log`：每个 HTTP 请求的访问日志
+
+按天一个文件，保留 `LOG_RETENTION_DAYS`（默认 30）天；`LOG_APP_TO_FILE` / `LOG_ACCESS_TO_FILE` 可分别开关。
+
+### 10.6 导入知识库（首次使用）
 
 在 `/admin` 页面操作，或命令行：
 
@@ -354,7 +363,7 @@ curl -X POST http://localhost:8000/chat -H "X-User-Id: alice" \
      -d '{"message":"你好","stream":false}'
 ```
 
-### 10.6 常见问题
+### 10.7 常见问题
 
 | 问题 | 解决 |
 |---|---|
@@ -366,7 +375,7 @@ curl -X POST http://localhost:8000/chat -H "X-User-Id: alice" \
 | cpolar 穿透报 `crypto.randomUUID` | 已修复（自动 fallback）；确保重新 `npm run build` |
 | 前端页面白屏 | 确认 `npm run build` 产出了 `web/dist/`；检查 `FRONTEND_DIST` 路径 |
 
-### 10.7 开发模式（热重载）
+### 10.8 开发模式（热重载）
 
 ```bash
 # 终端 1：后端

@@ -49,7 +49,14 @@ from .tools.skill_loader import SkillLoaderSkill
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
-    configure_logging(settings.log_level)
+    configure_logging(
+        settings.log_level,
+        log_dir=settings.log_dir,
+        log_to_file=settings.log_to_file,
+        log_app_to_file=settings.log_app_to_file,
+        log_access_to_file=settings.log_access_to_file,
+        retention_days=settings.log_retention_days,
+    )
     ov: dict = app.state._overrides
 
     # --- always-built infra ---

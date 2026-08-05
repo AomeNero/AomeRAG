@@ -4,12 +4,17 @@ hybrid query in a threadpool."""
 from __future__ import annotations
 
 import asyncio
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
+import structlog
+
 from .embedder import OllamaEmbedder
 from .store import ZvecStore
+
+_log = structlog.get_logger()
 
 
 @dataclass
@@ -51,11 +56,19 @@ class Retriever:
         top_k: int | None = None,
         filters: SearchFilters | None = None,  # noqa: ARG002 - reserved
     ) -> list[Hit]:
+        _log.debug("retriever.search", query=query[:80])
         vec = await self._embedder.embed(query)
         k = top_k or self._top_k
         loop = asyncio.get_running_loop()
+        t0 = time.perf_counter()
         docs = await loop.run_in_executor(self._executor, self._store.hybrid_query, vec, query, k)
-        return [self._to_hit(d) for d in docs]
+        hits = [self._to_hit(d) for d in docs]
+        _log.info(
+            "retriever.search.done",
+            top_k=k, results=len(hits),
+            elapsed_ms=round((time.perf_counter() - t0) * 1000, 1),
+        )
+        return hits
 
     @staticmethod
     def _to_hit(doc: Any) -> Hit:
