@@ -147,8 +147,10 @@ def create_app(settings: Settings | None = None, *, overrides: dict | None = Non
     app.include_router(feedback_router)
     # Serve the built frontend last (API routes above take precedence). Only mounts when the
     # dist dir exists; in dev the Vite server serves the frontend and this is skipped.
-    _maybe_mount_frontend(app)
+    # Mount /images BEFORE the catch-all frontend `/` mount, or the root static mount
+    # (which matches everything) would shadow it and /images/* would 404.
     _maybe_mount_images(app)
+    _maybe_mount_frontend(app)
     return app
 
 
