@@ -5,42 +5,74 @@ Handles three image sources:
   2. http(s) URLs (remote images, downloaded via requests)
   3. local files from Pandoc --extract-media (walked and converted)
 
-All images are converted to PNG via Pillow and saved to images_dir with timestamp names.
-Pillow-unreadable images (e.g. EMF/WMF) are silently skipped.
+All raster formats are converted to PNG via Pillow; EMF/WMF (Pillow cannot read them) are
+rendered via PowerShell + System.Drawing (Windows built-in). Images are saved to images_dir
+with a content-hash name. A conversion/download failure keeps the original reference for
+remote URLs, but removes it for extracted local media (whose temp path no longer exists).
 """
 
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import os
 import re
-import time
-from datetime import datetime
+import subprocess
+import tempfile
 from pathlib import Path
 
 from PIL import Image
 import requests
 
-_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".webp"}
+_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".webp", ".emf", ".wmf"}
+_EMF_EXTS = {".emf", ".wmf"}
+
+
+def _save_png_bytes(png_bytes: bytes, images_dir: Path) -> str:
+    """Save PNG bytes under a content-hash name `image_<sha1(png)[:16]>.png`;
+    reuses an existing file (same content → same name, no accumulation)."""
+    name = f"image_{hashlib.sha1(png_bytes).hexdigest()[:16]}.png"
+    path = images_dir / name
+    if not path.exists():
+        path.write_bytes(png_bytes)
+    return name
 
 
 def _save_png(data: bytes, images_dir: Path) -> str | None:
-    """Convert bytes to PNG via Pillow, save with a strict timestamp name
-    `image_%Y%m%d%H%M%S%f.png`. On collision, retry with a fresh timestamp — never
-    appends a `_N` suffix, so names always match the strict format."""
+    """Convert raster bytes to PNG via Pillow and save. Returns the filename or None."""
     try:
         img = Image.open(io.BytesIO(data))
-        while True:
-            name = f"image_{datetime.now().strftime('%Y%m%d%H%M%S%f')}.png"
-            path = images_dir / name
-            if not path.exists():
-                break
-            time.sleep(0.001)  # let the clock advance on coarse-resolution systems
         if img.mode in ("RGBA", "LA", "P"):
             img = img.convert("RGB")
-        img.save(path, "PNG")
-        return name
+        buf = io.BytesIO()
+        img.save(buf, "PNG")
+        return _save_png_bytes(buf.getvalue(), images_dir)
+    except Exception:
+        return None
+
+
+def _convert_emf(src: Path, images_dir: Path) -> str | None:
+    """Render an EMF/WMF file to PNG via PowerShell + System.Drawing (Windows built-in).
+    Returns the content-hash filename, or None on failure."""
+    try:
+        images_dir.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory() as td:
+            out_png = Path(td) / "out.png"
+            script = (
+                "Add-Type -AssemblyName System.Drawing; "
+                f"$img = [System.Drawing.Image]::FromFile('{src.as_posix()}'); "
+                f"$img.Save('{out_png.as_posix()}', [System.Drawing.Imaging.ImageFormat]::Png); "
+                "$img.Dispose()"
+            )
+            r = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True,
+                timeout=60,
+            )
+            if r.returncode != 0 or not out_png.is_file():
+                return None
+            return _save_png_bytes(out_png.read_bytes(), images_dir)
     except Exception:
         return None
 
@@ -97,13 +129,19 @@ def process_images(
             if not img_path.is_file() or img_path.suffix.lower() not in _IMAGE_EXTS:
                 continue
             try:
-                rel = _link(_save_png(img_path.read_bytes(), images_dir))
-                if rel:
-                    old = re.escape(img_path.name)
+                if img_path.suffix.lower() in _EMF_EXTS:
+                    name = _convert_emf(img_path, images_dir)  # PowerShell render
+                else:
+                    name = _save_png(img_path.read_bytes(), images_dir)
+                old = re.escape(img_path.name)
 
-                    # 3a. markdown syntax: ![alt](...image1.png)
+                if name:
+                    rel = _link(name)
+
+                    # 3a. markdown syntax: ![alt](...image1.png) → ![alt](rel)
+                    # (drop any path prefix before the media filename)
                     markdown = re.sub(
-                        rf"(!\[[^\]]*\]\([^)]*?){old}\)", rf"\1{rel})", markdown
+                        rf'!\[([^\]]*)\]\([^)]*?{old}\)', rf'![\1]({rel})', markdown
                     )
 
                     # 3b. HTML <img src="...image1.png" .../> — pandoc emits raw HTML for
@@ -119,6 +157,15 @@ def process_images(
                     markdown = re.sub(
                         rf'(?s)<img\b(?:(?!<img\b).)*?src="[^"]*{old}"(?:(?!<img\b).)*?/?>',
                         _repl_html_img,
+                        markdown,
+                    )
+                else:
+                    # conversion failed — the original reference points at a pandoc temp path
+                    # that no longer exists after cleaning, so drop the broken reference.
+                    markdown = re.sub(rf"!\[[^\]]*\]\([^)]*?{old}\)", "", markdown)
+                    markdown = re.sub(
+                        rf'(?s)<img\b(?:(?!<img\b).)*?src="[^"]*{old}"(?:(?!<img\b).)*?/?>',
+                        "",
                         markdown,
                     )
             except Exception:
