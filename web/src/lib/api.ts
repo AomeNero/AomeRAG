@@ -217,6 +217,94 @@ export async function getAdminMessages(sessionId: string): Promise<HistoryMessag
   return (await r.json()) as HistoryMessage[]
 }
 
+// ---- KB management (知识库管理) ----
+
+export type KbDocStatus = 'ok' | 'orphan' | 'unsliced'
+
+export type KbDoc = {
+  source_doc: string
+  file_exists: boolean
+  n_chunks: number
+  status: KbDocStatus
+}
+
+export type KbDocsResponse = {
+  total: number
+  page: number
+  page_size: number
+  items: KbDoc[]
+}
+
+export type KbChunk = {
+  id: string
+  source_doc: string
+  chunk_index: number
+  heading_path: string
+  text_preview: string
+  created_at: number
+}
+
+export async function listKbDocs(
+  page: number,
+  pageSize: number,
+  q = '',
+  filter = '',
+): Promise<KbDocsResponse> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+  if (q) params.set('q', q)
+  if (filter) params.set('filter', filter)
+  const r = await fetch(`/admin/kb/docs?${params}`, { headers: authHeaders() })
+  if (!r.ok) throw new Error(`/admin/kb/docs failed: ${r.status}`)
+  return (await r.json()) as KbDocsResponse
+}
+
+export async function getKbDocChunks(sourceDoc: string): Promise<KbChunk[]> {
+  const r = await fetch(`/admin/kb/chunks?source_doc=${encodeURIComponent(sourceDoc)}`, {
+    headers: authHeaders(),
+  })
+  if (!r.ok) throw new Error(`/admin/kb/chunks failed: ${r.status}`)
+  return ((await r.json()) as { chunks: KbChunk[] }).chunks
+}
+
+export async function deleteKbFile(sourceDoc: string): Promise<void> {
+  const r = await fetch(`/admin/kb/file?source_doc=${encodeURIComponent(sourceDoc)}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
+  if (!r.ok) throw new Error(`/admin/kb/file failed: ${r.status}`)
+}
+
+export async function deleteKbDocChunks(sourceDoc: string): Promise<void> {
+  const r = await fetch(`/admin/kb/doc-chunks?source_doc=${encodeURIComponent(sourceDoc)}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
+  if (!r.ok) throw new Error(`/admin/kb/doc-chunks failed: ${r.status}`)
+}
+
+export async function deleteKbChunk(chunkId: string): Promise<void> {
+  const r = await fetch(`/admin/kb/chunk?id=${encodeURIComponent(chunkId)}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
+  if (!r.ok) throw new Error(`/admin/kb/chunk failed: ${r.status}`)
+}
+
+export async function reingestKbDoc(sourceDoc: string): Promise<{ n_chunks: number }> {
+  const r = await fetch(`/admin/kb/reingest?source_doc=${encodeURIComponent(sourceDoc)}`, {
+    method: 'POST',
+    headers: authHeaders(true),
+  })
+  if (!r.ok) throw new Error(`/admin/kb/reingest failed: ${r.status}`)
+  return (await r.json()) as { n_chunks: number }
+}
+
+export async function syncKbMeta(): Promise<{ n_docs: number; n_chunks: number; n_skipped: number }> {
+  const r = await fetch('/admin/kb/sync', { method: 'POST', headers: authHeaders() })
+  if (!r.ok) throw new Error(`/admin/kb/sync failed: ${r.status}`)
+  return (await r.json()) as { n_docs: number; n_chunks: number; n_skipped: number }
+}
+
 // ---- Feedback API ----
 
 export type FeedbackBody = {

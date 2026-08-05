@@ -15,6 +15,7 @@ import time
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from ..retrieval.embedder import OllamaEmbedder
 from ..retrieval.store import ZvecStore
@@ -54,6 +55,7 @@ class IngestionPipeline:
         executor: ThreadPoolExecutor,
         *,
         embed_batch: int = 16,
+        chunk_meta: object | None = None,
     ) -> None:
         self._parser = parser
         self._chunker = chunker
@@ -62,6 +64,7 @@ class IngestionPipeline:
         self._lock = write_lock
         self._executor = executor
         self._batch = embed_batch
+        self._chunk_meta = chunk_meta  # optional ChunkMetaStore — None in legacy call sites
 
     async def _make_chunks(
         self, source_doc: str, markdown: str, department: str | None
@@ -96,6 +99,20 @@ class IngestionPipeline:
             await loop.run_in_executor(self._executor, self._store.delete_by_source, source_doc)
             if chunks:
                 await loop.run_in_executor(self._executor, self._store.upsert_chunks, chunks)
+            if self._chunk_meta is not None:
+                await self._chunk_meta.replace_source(
+                    source_doc,
+                    [
+                        {
+                            "id": c["id"],
+                            "chunk_index": c["chunk_index"],
+                            "heading_path": c.get("heading_path", ""),
+                            "text_preview": (c.get("text") or "")[:200],
+                            "created_at": c.get("created_at", 0),
+                        }
+                        for c in chunks
+                    ],
+                )
 
     async def ingest(
         self, docs: list[UploadedDoc], department: str | None = None
@@ -171,3 +188,64 @@ class IngestionPipeline:
             "errors": report.errors,
             "elapsed_s": report.elapsed_s,
         }
+
+    async def reingest_one(self, source_doc: str, md_data_dir: str) -> IngestReport:
+        """Re-ingest a single md-data document (chunk + embed + delete-then-insert).
+        Needs Ollama online (embedding). Returns an IngestReport."""
+        report = IngestReport()
+        path = Path(md_data_dir) / source_doc
+        async for ev in self.ingest_files([(source_doc, str(path))]):
+            if ev["type"] == "summary":
+                report.n_docs = ev["n_docs"]
+                report.n_chunks = ev["n_chunks"]
+                report.n_failed = ev["n_failed"]
+                report.errors = ev["errors"]
+        return report
+
+    async def sync_meta(self, md_data_dir: str) -> dict:
+        """Rebuild the chunk-meta side table from md-data files WITHOUT re-embedding.
+
+        For each .md file: re-chunk with the current chunker, then verify which candidate
+        chunk ids actually exist in the zvec collection (via fetch) — so the side table only
+        records chunks that are really indexed (docs never ingested stay 'unsliced')."""
+        loop = asyncio.get_running_loop()
+        base = Path(md_data_dir)
+        counts = {"n_docs": 0, "n_chunks": 0, "n_skipped": 0}
+        if self._chunk_meta is None:
+            return counts
+        if not base.is_dir():
+            return counts
+        for p in sorted(base.rglob("*")):
+            rel = p.relative_to(base).as_posix()
+            if rel.startswith("images/") or rel == "images":
+                continue
+            if not p.is_file() or p.suffix.lower() != ".md":
+                continue
+            try:
+                markdown = p.read_text(encoding="utf-8", errors="replace")
+                pieces = self._chunker.split(markdown, source_doc=rel)
+                if not pieces:
+                    continue
+                ids = [chunk_id(rel, pc["chunk_index"]) for pc in pieces]
+                existing = await loop.run_in_executor(self._executor, self._store.fetch_ids, ids)
+                meta = [
+                    {
+                        "id": cid,
+                        "chunk_index": pc["chunk_index"],
+                        "heading_path": pc.get("heading_path", ""),
+                        "text_preview": (pc.get("text") or "")[:200],
+                        "created_at": int(time.time()),
+                    }
+                    for cid, pc in zip(ids, pieces, strict=True)
+                    if cid in existing
+                ]
+                if meta:
+                    await self._chunk_meta.replace_source(rel, meta)
+                    counts["n_docs"] += 1
+                    counts["n_chunks"] += len(meta)
+                else:
+                    await self._chunk_meta.delete_source(rel)
+                    counts["n_skipped"] += 1
+            except Exception:  # noqa: BLE001 - one bad file must not abort the sync
+                continue
+        return counts

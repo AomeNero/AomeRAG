@@ -36,6 +36,7 @@ from .retrieval.embedder import OllamaEmbedder
 from .retrieval.retriever import Retriever
 from .retrieval.store import ZvecStore
 from .services import Services  # noqa: F401
+from .session.chunk_meta import ChunkMetaStore
 from .session.db import open_db
 from .session.store import SessionStore
 from .tools.clarify import ClarifySkill
@@ -62,6 +63,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     built_db = "session_db" not in ov
     app.state.session_db = ov.get("session_db") or await open_db(settings.sqlite_path)
     app.state.session_store = ov.get("session_store") or SessionStore(app.state.session_db)
+    app.state.chunk_meta = ov.get("chunk_meta") or ChunkMetaStore(app.state.session_db)
 
     # --- retrieval ---
     built_embedder = "embedder" not in ov
@@ -79,6 +81,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.ingestion = ov.get("ingestion") or IngestionPipeline(
         Parser(), Chunker(), app.state.embedder, app.state.store,
         app.state.ingestion_lock, app.state.zvec_executor,
+        chunk_meta=app.state.chunk_meta,
     )
 
     # --- cleaning (raw-data → md-data) ---

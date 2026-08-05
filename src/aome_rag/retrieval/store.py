@@ -69,6 +69,11 @@ class ZvecStore:
         self._col.delete_by_filter(f'{F_SOURCE_DOC} = "{source_doc}"')
         self._col.flush()
 
+    def delete_chunk(self, chunk_id: str) -> None:
+        """Delete a single chunk by its (zvec-safe) id."""
+        self._col.delete(chunk_id)
+        self._col.flush()
+
     def chunk_count(self) -> int:
         """Total number of chunks in the collection."""
         return self._col.stats.doc_count

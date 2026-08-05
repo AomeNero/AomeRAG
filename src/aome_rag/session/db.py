@@ -46,6 +46,16 @@ CREATE TABLE IF NOT EXISTS feedback (
     created_at    REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS chunk_meta (
+    id           TEXT PRIMARY KEY,
+    source_doc   TEXT NOT NULL,
+    chunk_index  INTEGER NOT NULL,
+    heading_path TEXT NOT NULL DEFAULT '',
+    text_preview TEXT NOT NULL DEFAULT '',
+    created_at   REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chunk_meta_source ON chunk_meta (source_doc, chunk_index);
 """
 
 

@@ -8,6 +8,7 @@ import {
   FileText,
   MessageSquare,
   RefreshCw,
+  Search,
   ThumbsDown,
   ThumbsUp,
   Trash2,
@@ -16,29 +17,39 @@ import {
 } from 'lucide-react'
 import {
   deleteFeedback,
+  deleteKbChunk,
+  deleteKbDocChunks,
+  deleteKbFile,
   deleteSession,
   getAdminMessages,
   getAllFeedback,
   getAllSessions,
   getFiles,
+  getKbDocChunks,
   getStats,
+  listKbDocs,
+  reingestKbDoc,
   resetStore,
   streamCleanDir,
   streamIngestDir,
+  syncKbMeta,
   type AdminSession,
   type FeedbackItem,
   type FileInfo,
   type HistoryMessage,
   type IngestEvent,
+  type KbChunk,
+  type KbDoc,
   type SystemStats,
 } from '../../lib/api'
 import { cn } from '../../lib/utils'
 
 // ─── Tab definitions ──────────────────────────────────────────────
 
-type Tab = 'sessions' | 'feedback' | 'system'
+type Tab = 'sessions' | 'feedback' | 'system' | 'kb'
 
 const TABS: { key: Tab; label: string }[] = [
+  { key: 'kb', label: '知识库管理' },
   { key: 'sessions', label: '会话管理' },
   { key: 'feedback', label: '反馈管理' },
   { key: 'system', label: '系统运维' },
@@ -47,7 +58,7 @@ const TABS: { key: Tab; label: string }[] = [
 // ─── Main page ────────────────────────────────────────────────────
 
 export function AdminPage() {
-  const [tab, setTab] = useState<Tab>('sessions')
+  const [tab, setTab] = useState<Tab>('kb')
 
   return (
     <div className="min-h-screen bg-gray-50 p-6 text-gray-900">
@@ -79,6 +90,7 @@ export function AdminPage() {
         </div>
 
         {/* Tab content */}
+        {tab === 'kb' && <KbTab />}
         {tab === 'sessions' && <SessionsTab />}
         {tab === 'feedback' && <FeedbackTab />}
         {tab === 'system' && <SystemTab />}
@@ -611,6 +623,333 @@ function SystemTab() {
         )}
       </Card>
     </div>
+  )
+}
+
+// ─── KB Management Tab (知识库管理) ───────────────────────────────
+
+const KB_FILTERS: { value: string; label: string }[] = [
+  { value: '', label: '全部文档' },
+  { value: 'anomaly', label: '只看异常' },
+  { value: 'orphan', label: '孤儿切片' },
+  { value: 'unsliced', label: '未切片' },
+]
+
+function KbTab() {
+  const [docs, setDocs] = useState<KbDoc[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [pageSize] = useState(50)
+  const [q, setQ] = useState('')
+  const [filter, setFilter] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [chunks, setChunks] = useState<KbChunk[]>([])
+  const [msg, setMsg] = useState('')
+
+  const load = async () => {
+    try {
+      const r = await listKbDocs(page, pageSize, q, filter)
+      setDocs(r.items)
+      setTotal(r.total)
+    } catch {
+      setDocs([])
+    }
+  }
+
+  useEffect(() => {
+    void load()
+  }, [page, q, filter])
+
+  const toggleExpand = async (doc: string) => {
+    if (expanded === doc) {
+      setExpanded(null)
+      setChunks([])
+      return
+    }
+    setExpanded(doc)
+    setChunks([])
+    try {
+      setChunks(await getKbDocChunks(doc))
+    } catch {
+      setChunks([])
+    }
+  }
+
+  const doReingest = async (doc: string) => {
+    setBusy(`re:${doc}`)
+    setMsg('')
+    try {
+      const r = await reingestKbDoc(doc)
+      setMsg(`已重新切片「${doc}」: ${r.n_chunks} 块`)
+    } catch (e) {
+      setMsg(`重新切片失败: ${String(e)}`)
+    }
+    setBusy(null)
+    void load()
+  }
+
+  const doDeleteFile = async (doc: string) => {
+    try {
+      await deleteKbFile(doc)
+      setMsg(`已删除文件「${doc}」`)
+    } catch (e) {
+      setMsg(`删除文件失败: ${String(e)}`)
+    }
+    void load()
+  }
+
+  const doDeleteChunks = async (doc: string) => {
+    try {
+      await deleteKbDocChunks(doc)
+      setMsg(`已删除「${doc}」的全部切片`)
+    } catch (e) {
+      setMsg(`删除切片失败: ${String(e)}`)
+    }
+    void load()
+  }
+
+  const doDeleteChunk = async (chunkId: string) => {
+    try {
+      await deleteKbChunk(chunkId)
+      setChunks(expanded ? await getKbDocChunks(expanded) : [])
+      setMsg('已删除单个切片')
+    } catch (e) {
+      setMsg(`删除切片失败: ${String(e)}`)
+    }
+    void load()
+  }
+
+  const doSync = async () => {
+    setBusy('__sync__')
+    setMsg('')
+    try {
+      const r = await syncKbMeta()
+      setMsg(`同步完成: ${r.n_docs} 文档 / ${r.n_chunks} 切片`)
+    } catch (e) {
+      setMsg(`同步失败: ${String(e)}`)
+    }
+    setBusy(null)
+    void load()
+  }
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+
+  return (
+    <div className="space-y-4">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            value={q}
+            onChange={(e) => {
+              setQ(e.target.value)
+              setPage(1)
+            }}
+            placeholder="搜索文档名…"
+            className="h-8 rounded border border-gray-300 bg-white pl-8 pr-2 text-sm"
+          />
+        </div>
+        <select
+          value={filter}
+          onChange={(e) => {
+            setFilter(e.target.value)
+            setPage(1)
+          }}
+          className="h-8 rounded border border-gray-300 bg-white px-2 text-sm"
+        >
+          {KB_FILTERS.map((f) => (
+            <option key={f.value} value={f.value}>
+              {f.label}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={() => void load()}
+          className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:brightness-95"
+        >
+          刷新
+        </button>
+        <button
+          onClick={doSync}
+          disabled={busy !== null}
+          className="flex items-center gap-1 rounded bg-gray-800 px-3 py-1 text-sm text-white hover:brightness-95 disabled:opacity-50"
+        >
+          <RefreshCw className={cn('h-3.5 w-3.5', busy === '__sync__' && 'animate-spin')} />
+          {busy === '__sync__' ? '同步中…' : '同步切片元数据'}
+        </button>
+        <span className="text-sm text-gray-400">共 {total} 份文档</span>
+      </div>
+      {msg && <p className="text-sm text-gray-600">{msg}</p>}
+
+      {/* Table */}
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b text-left text-gray-500">
+              <th className="w-8 px-4 py-2" />
+              <th className="px-4 py-2">文档</th>
+              <th className="w-20 px-4 py-2">文件</th>
+              <th className="w-16 px-4 py-2">切片</th>
+              <th className="w-24 px-4 py-2">状态</th>
+              <th className="w-60 px-4 py-2">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {docs.map((d) => (
+              <KbDocRow
+                key={d.source_doc}
+                d={d}
+                expanded={expanded === d.source_doc}
+                chunks={chunks}
+                busy={busy}
+                onToggle={() => toggleExpand(d.source_doc)}
+                onReingest={() => doReingest(d.source_doc)}
+                onDeleteFile={() => doDeleteFile(d.source_doc)}
+                onDeleteChunks={() => doDeleteChunks(d.source_doc)}
+                onDeleteChunk={(id) => doDeleteChunk(id)}
+              />
+            ))}
+            {docs.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                  暂无文档
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-gray-400">
+          第 {page} / {totalPages} 页
+        </span>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="rounded border border-gray-300 px-3 py-1 disabled:opacity-40"
+          >
+            上一页
+          </button>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            className="rounded border border-gray-300 px-3 py-1 disabled:opacity-40"
+          >
+            下一页
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function KbDocRow({
+  d,
+  expanded,
+  chunks,
+  busy,
+  onToggle,
+  onReingest,
+  onDeleteFile,
+  onDeleteChunks,
+  onDeleteChunk,
+}: {
+  d: KbDoc
+  expanded: boolean
+  chunks: KbChunk[]
+  busy: string | null
+  onToggle: () => void
+  onReingest: () => void
+  onDeleteFile: () => void
+  onDeleteChunks: () => void
+  onDeleteChunk: (id: string) => void
+}) {
+  const reingesting = busy === `re:${d.source_doc}`
+  const statusTag =
+    d.status === 'orphan' ? (
+      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">孤儿切片</span>
+    ) : d.status === 'unsliced' ? (
+      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">未切片</span>
+    ) : (
+      <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">已索引</span>
+    )
+
+  return (
+    <>
+      <tr className="border-b transition hover:bg-gray-50">
+        <td className="px-4 py-2">
+          <button onClick={onToggle} className="text-gray-400 hover:text-gray-600">
+            {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
+        </td>
+        <td className="max-w-xs truncate px-4 py-2">{d.source_doc}</td>
+        <td className="px-4 py-2">{d.file_exists ? '✓' : <span className="text-red-500">已删</span>}</td>
+        <td className="px-4 py-2">{d.n_chunks}</td>
+        <td className="px-4 py-2">{statusTag}</td>
+        <td className="px-4 py-2">
+          <div className="flex gap-1.5">
+            <button
+              onClick={onReingest}
+              disabled={busy !== null || !d.file_exists}
+              className="flex items-center gap-1 rounded bg-blue-600 px-2 py-1 text-xs text-white hover:brightness-95 disabled:opacity-40"
+            >
+              <RefreshCw className={cn('h-3 w-3', reingesting && 'animate-spin')} />
+              {reingesting ? '切片中…' : '重新切片'}
+            </button>
+            <button
+              onClick={onDeleteChunks}
+              disabled={busy !== null || d.n_chunks === 0}
+              className="flex items-center gap-1 rounded bg-amber-600 px-2 py-1 text-xs text-white hover:brightness-95 disabled:opacity-40"
+            >
+              <Trash2 className="h-3 w-3" /> 删切片
+            </button>
+            <button
+              onClick={onDeleteFile}
+              disabled={busy !== null || !d.file_exists}
+              className="flex items-center gap-1 rounded bg-red-600 px-2 py-1 text-xs text-white hover:brightness-95 disabled:opacity-40"
+            >
+              <Trash2 className="h-3 w-3" /> 删文件
+            </button>
+          </div>
+        </td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={6} className="bg-gray-50 px-8 py-4">
+            {chunks.length === 0 ? (
+              <p className="text-sm text-gray-400">该文档没有已索引的切片</p>
+            ) : (
+              <div className="max-h-96 space-y-2 overflow-y-auto">
+                {chunks.map((c) => (
+                  <div key={c.id} className="rounded-lg border border-gray-200 bg-white p-3">
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-gray-500">
+                        #{c.chunk_index}
+                        {c.heading_path ? ` · ${c.heading_path}` : ''}
+                      </span>
+                      <button
+                        onClick={() => onDeleteChunk(c.id)}
+                        className="flex items-center gap-1 text-xs text-red-500 hover:underline"
+                      >
+                        <Trash2 className="h-3 w-3" /> 删除
+                      </button>
+                    </div>
+                    <p className="whitespace-pre-wrap text-xs leading-5 text-gray-700">
+                      {c.text_preview}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 
