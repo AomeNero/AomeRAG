@@ -49,6 +49,38 @@ def test_clean_dir_produces_md_with_frontmatter(tmp_path) -> None:
     assert "# Hello" in out  # body preserved
 
 
+def test_clean_dir_mirrors_raw_subdirs(tmp_path) -> None:
+    raw = tmp_path / "raw-data"
+    (raw / "sub").mkdir(parents=True)
+    (raw / "sub" / "doc.md").write_text("# Nested\n\ncontent here\n", encoding="utf-8")
+    (raw / "top.md").write_text("# Top\n\ncontent here\n", encoding="utf-8")
+
+    md = tmp_path / "md-data"
+    settings = Settings(
+        _env_file=None,
+        raw_data_dir=str(raw),
+        md_data_dir=str(md),
+        sqlite_path=str(tmp_path / "s.db"),
+        zvec_path=str(tmp_path / "col"),
+        skills_dir=str(tmp_path / "sk"),
+        embed_dim=8,
+    )
+    app = create_app(settings=settings, overrides={"provider": FakeProvider()})
+    with TestClient(app) as client:
+        with client.stream("POST", "/clean/dir", headers={"X-User-Id": "alice"}) as resp:
+            events = [
+                json.loads(line[5:].strip())
+                for line in resp.iter_lines()
+                if line.startswith("data:")
+            ]
+    assert events[-1]["n_docs"] == 2
+    assert events[-1]["n_failed"] == 0
+    # subdirectory structure is mirrored, not flattened
+    assert (md / "sub" / "doc.md").is_file()
+    assert (md / "top.md").is_file()
+    assert not (md / "doc.md").exists()
+
+
 def test_clean_dir_requires_auth(tmp_path) -> None:
     settings = Settings(
         _env_file=None,

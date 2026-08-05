@@ -74,11 +74,13 @@ class CleaningPipeline:
                 text, media_dir = await loop.run_in_executor(
                     self._executor, self._converter.convert, path
                 )
+                # Mirror raw-data's subdirectory structure: raw/sub/file.docx → md/sub/file.md
+                out_path = md / Path(rel).with_suffix(".md")
+                out_path.parent.mkdir(parents=True, exist_ok=True)
                 text = await loop.run_in_executor(
-                    self._executor, process_images, text, images_dir, media_dir
+                    self._executor, process_images, text, images_dir, media_dir, out_path.parent
                 )
                 fm = build_front_matter(path.stem)
-                out_path = md / f"{path.stem}.md"
                 out_path.write_text(fm + text, encoding="utf-8")
                 if media_dir and media_dir.is_dir():
                     shutil.rmtree(media_dir, ignore_errors=True)
