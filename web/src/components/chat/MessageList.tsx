@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Check, Copy, Loader2, RefreshCw, ThumbsDown, ThumbsUp } from 'lucide-react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import rehypeRaw from 'rehype-raw'
 import rehypeHighlight from 'rehype-highlight'
 import 'highlight.js/styles/atom-one-dark.css'
 import hlPython from 'highlight.js/lib/languages/python'
@@ -403,7 +404,15 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-const mdComponents: Components = {
+/** If an inline-code string is a KB image path (../images/, images/, /images/ + hash name),
+ * return the loadable /images/ URL, else null. */
+function imagePathToSrc(text: string): string | null {
+  const m = text.trim().match(/^(?:(?:\.\.\/)*images\/|\/images\/)(image_[0-9a-f]{16}\.png)$/)
+  return m ? `/images/${m[1]}` : null
+}
+
+function buildMdComponents(openImage: (src: string) => void): Components {
+  return {
   p: ({ node, ...props }) => <p className="mb-2 leading-7" {...props} />,
   h1: ({ node, ...props }) => <h1 className="mb-2 mt-4 text-xl font-semibold" {...props} />,
   h2: ({ node, ...props }) => <h2 className="mb-2 mt-4 text-lg font-semibold" {...props} />,
@@ -429,12 +438,23 @@ const mdComponents: Components = {
     <td className="border border-line px-3 py-1.5" {...props} />
   ),
   img: ({ node, src, ...props }) => {
-    const fixedSrc = src?.startsWith('images/')
-      ? `/${src}`
-      : src?.startsWith('/images/')
-      ? src
-      : src
-    return <img src={fixedSrc} className="my-2 max-w-full rounded-lg" alt="" {...props} />
+    // normalize `../images/…` / `images/…` → `/images/…` so the backend mount serves them
+    let s = src ?? ''
+    while (s.startsWith('../')) s = s.slice(3)
+    const fixedSrc = s.startsWith('images/')
+      ? `/${s}`
+      : s.startsWith('/images/')
+        ? s
+        : src
+    return (
+      <img
+        src={fixedSrc}
+        className="my-2 max-h-48 max-w-full cursor-pointer rounded-lg object-contain transition hover:opacity-90"
+        alt=""
+        onClick={() => fixedSrc && openImage(fixedSrc)}
+        {...props}
+      />
+    )
   },
   pre: ({ node, ...props }) => <PreBlock {...props} />,
   code: ({ node, className, children, ...props }) => {
@@ -445,10 +465,48 @@ const mdComponents: Components = {
         </code>
       )
     }
+    // inline code that is exactly a KB image path → render the actual image
+    if (typeof children === 'string') {
+      const imgSrc = imagePathToSrc(children)
+      if (imgSrc) {
+        return (
+          <img
+            src={imgSrc}
+            className="my-2 max-h-48 max-w-full cursor-pointer rounded-lg object-contain transition hover:opacity-90"
+            alt=""
+            onClick={() => openImage(imgSrc)}
+          />
+        )
+      }
+    }
     return (
       <code className="rounded bg-field px-1 py-0.5 font-mono text-[13px]">{children}</code>
     )
   },
+  }
+}
+
+function ImagePreview({ src, onClose }: { src: string; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      onClick={onClose}
+    >
+      <div className="relative" onClick={(e) => e.stopPropagation()}>
+        <img
+          src={src}
+          className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain"
+          alt=""
+        />
+        <button
+          onClick={onClose}
+          className="absolute -right-3 -top-3 flex h-8 w-8 items-center justify-center rounded-full bg-white text-gray-700 shadow hover:bg-gray-100"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function PreBlock({ children }: { children?: ReactNode }) {
@@ -476,20 +534,25 @@ function PreBlock({ children }: { children?: ReactNode }) {
 }
 
 function Markdown({ text }: { text: string }) {
+  const [preview, setPreview] = useState<string | null>(null)
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[
-        [rehypeHighlight, {
-          languages: {
-            python: hlPython, javascript: hlJavascript, cpp: hlCpp, c: hlC, csharp: hlCsharp,
-            lua: hlLua, bash: hlBash, json: hlJson, xml: hlXml, css: hlCss, markdown: hlMarkdown,
-          },
-        }],
-      ]}
-      components={mdComponents}
-    >
-      {text}
-    </ReactMarkdown>
+    <>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[
+          rehypeRaw, // render raw HTML (e.g. <img src="../images/...">) as real elements
+          [rehypeHighlight, {
+            languages: {
+              python: hlPython, javascript: hlJavascript, cpp: hlCpp, c: hlC, csharp: hlCsharp,
+              lua: hlLua, bash: hlBash, json: hlJson, xml: hlXml, css: hlCss, markdown: hlMarkdown,
+            },
+          }],
+        ]}
+        components={buildMdComponents(setPreview)}
+      >
+        {text}
+      </ReactMarkdown>
+      {preview && <ImagePreview src={preview} onClose={() => setPreview(null)} />}
+    </>
   )
 }
