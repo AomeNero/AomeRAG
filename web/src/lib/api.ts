@@ -10,13 +10,6 @@ export type ChatEvent =
   | { type: 'final' }
   | { type: 'error'; code: string; message: string }
 
-export type IngestEvent =
-  | { type: 'scan'; raw_dir: string; n_files: number; n_skipped: number }
-  | { type: 'file_start'; source_doc: string }
-  | { type: 'file_done'; source_doc: string; n_chunks: number; status: 'ok' | 'error'; error?: string }
-  | { type: 'skipped'; source_doc: string; reason: string }
-  | { type: 'summary'; n_docs: number; n_chunks: number; n_failed: number; errors: string[]; elapsed_s: number }
-
 export type Session = {
   id: string
   title: string | null
@@ -109,12 +102,6 @@ export async function* streamChat(
   for await (const ev of sseEvents(resp)) yield ev as unknown as ChatEvent
 }
 
-export async function* streamIngestDir(signal?: AbortSignal): AsyncGenerator<IngestEvent> {
-  const resp = await fetch('/ingest/dir', { method: 'POST', headers: authHeaders(), signal })
-  if (!resp.ok) throw new Error(`/ingest/dir failed: ${resp.status}`)
-  for await (const ev of sseEvents(resp)) yield ev as unknown as IngestEvent
-}
-
 export async function listSessions(): Promise<Session[]> {
   const r = await fetch('/sessions', { headers: authHeaders() })
   if (!r.ok) throw new Error(`/sessions failed: ${r.status}`)
@@ -177,10 +164,35 @@ export async function searchSessions(q: string): Promise<SessionHit[]> {
 
 // ---- Admin API ----
 
-export async function* streamCleanDir(signal?: AbortSignal): AsyncGenerator<IngestEvent> {
-  const resp = await fetch('/clean/dir', { method: 'POST', headers: authHeaders(), signal })
-  if (!resp.ok) throw new Error(`/clean/dir failed: ${resp.status}`)
-  for await (const ev of sseEvents(resp)) yield ev as unknown as IngestEvent
+export async function* streamCleanDirInc(signal?: AbortSignal): AsyncGenerator<CleanEvent> {
+  const resp = await fetch('/clean/dir/inc', { method: 'POST', headers: authHeaders(), signal })
+  if (!resp.ok) throw new Error(`/clean/dir/inc failed: ${resp.status}`)
+  for await (const ev of sseEvents(resp)) yield ev as CleanEvent
+}
+
+// Loose shape for /update/dir events (clean scan/file_done/deleted/summary + ingest events).
+export type CleanEvent = {
+  type: string
+  source_doc?: string
+  raw_dir?: string
+  n_files?: number
+  n_skipped?: number
+  n_cleaned?: number
+  n_deleted?: number
+  n_docs?: number
+  n_chunks?: number
+  n_failed?: number
+  status?: string
+  error?: string
+  reason?: string
+  errors?: string[]
+  elapsed_s?: number
+}
+
+export async function* streamIngestDirInc(signal?: AbortSignal): AsyncGenerator<CleanEvent> {
+  const resp = await fetch('/ingest/dir/inc', { method: 'POST', headers: authHeaders(), signal })
+  if (!resp.ok) throw new Error(`/ingest/dir/inc failed: ${resp.status}`)
+  for await (const ev of sseEvents(resp)) yield ev as CleanEvent
 }
 
 export type FileInfo = { name: string; size: number }
@@ -303,6 +315,16 @@ export async function syncKbMeta(): Promise<{ n_docs: number; n_chunks: number; 
   const r = await fetch('/admin/kb/sync', { method: 'POST', headers: authHeaders() })
   if (!r.ok) throw new Error(`/admin/kb/sync failed: ${r.status}`)
   return (await r.json()) as { n_docs: number; n_chunks: number; n_skipped: number }
+}
+
+export async function clearCleanState(): Promise<void> {
+  const r = await fetch('/admin/kb/clean-state/clear', { method: 'POST', headers: authHeaders() })
+  if (!r.ok) throw new Error(`/admin/kb/clean-state/clear failed: ${r.status}`)
+}
+
+export async function clearIngestState(): Promise<void> {
+  const r = await fetch('/admin/kb/ingest-state/clear', { method: 'POST', headers: authHeaders() })
+  if (!r.ok) throw new Error(`/admin/kb/ingest-state/clear failed: ${r.status}`)
 }
 
 // ---- Feedback API ----

@@ -39,6 +39,7 @@ async def reset_store(
     """Clear the vector store (danger zone — destroys all chunks, irreversible)."""
     state.store.clear()
     await state.chunk_meta.clear()
+    await state.clean_state.clear()
     return {"ok": True, "message": "vector store cleared"}
 
 
@@ -200,3 +201,23 @@ async def kb_sync(
     """Rebuild the chunk_meta side table from md-data files (no embedding)."""
     counts = await state.ingestion.sync_meta(state.settings.md_data_dir)
     return {"ok": True, **counts}
+
+
+@router.post("/admin/kb/clean-state/clear")
+async def kb_clear_clean_state(
+    user: User = Depends(get_current_user),
+    state=Depends(get_state),
+) -> dict:
+    """清空清洗记录 — the next 清洗数据 will then process everything (full clean)."""
+    await state.clean_state.clear()
+    return {"ok": True, "message": "clean_state cleared"}
+
+
+@router.post("/admin/kb/ingest-state/clear")
+async def kb_clear_ingest_state(
+    user: User = Depends(get_current_user),
+    state=Depends(get_state),
+) -> dict:
+    """清空切片记录 — the next 矢量化数据 will then re-slice everything (full ingest)."""
+    await state.ingest_state.clear()
+    return {"ok": True, "message": "ingest_state cleared"}

@@ -16,6 +16,8 @@ import {
   Wand2,
 } from 'lucide-react'
 import {
+  clearCleanState,
+  clearIngestState,
   deleteFeedback,
   deleteKbChunk,
   deleteKbDocChunks,
@@ -30,14 +32,14 @@ import {
   listKbDocs,
   reingestKbDoc,
   resetStore,
-  streamCleanDir,
-  streamIngestDir,
+  streamCleanDirInc,
+  streamIngestDirInc,
   syncKbMeta,
   type AdminSession,
+  type CleanEvent,
   type FeedbackItem,
   type FileInfo,
   type HistoryMessage,
-  type IngestEvent,
   type KbChunk,
   type KbDoc,
   type SystemStats,
@@ -437,12 +439,13 @@ function FeedbackTab() {
 function SystemTab() {
   const [stats, setStats] = useState<SystemStats | null>(null)
   const [readyz, setReadyz] = useState<Record<string, string> | null>(null)
-  const [cleanEvents, setCleanEvents] = useState<IngestEvent[]>([])
-  const [ingestEvents, setIngestEvents] = useState<IngestEvent[]>([])
-  const [busy, setBusy] = useState<'clean' | 'ingest' | null>(null)
+  const [cleanIncEvents, setCleanIncEvents] = useState<CleanEvent[]>([])
+  const [vectorizeEvents, setVectorizeEvents] = useState<CleanEvent[]>([])
+  const [busy, setBusy] = useState<'clean_inc' | 'vectorize' | null>(null)
+  const [msg, setMsg] = useState('')
   const [files, setFiles] = useState<FileInfo[]>([])
   const [fileType, setFileType] = useState<'raw-data' | 'md-data'>('raw-data')
-  const [resetConfirm, setResetConfirm] = useState(false)
+  const [confirmClear, setConfirmClear] = useState<'reset' | 'clean' | 'ingest' | null>(null)
 
   const refresh = async () => {
     try {
@@ -458,25 +461,27 @@ function SystemTab() {
     void refresh()
   }, [])
 
-  const runClean = async () => {
-    setBusy('clean')
-    setCleanEvents([])
+  const runCleanInc = async () => {
+    setBusy('clean_inc')
+    setCleanIncEvents([])
+    setMsg('')
     try {
-      for await (const ev of streamCleanDir()) setCleanEvents((p) => [...p, ev])
-    } catch {
-      /* ignore */
+      for await (const ev of streamCleanDirInc()) setCleanIncEvents((p) => [...p, ev])
+    } catch (e) {
+      setMsg(`清洗失败: ${String(e)}`)
     }
     setBusy(null)
     void refresh()
   }
 
-  const runIngest = async () => {
-    setBusy('ingest')
-    setIngestEvents([])
+  const runVectorizeInc = async () => {
+    setBusy('vectorize')
+    setVectorizeEvents([])
+    setMsg('')
     try {
-      for await (const ev of streamIngestDir()) setIngestEvents((p) => [...p, ev])
-    } catch {
-      /* ignore */
+      for await (const ev of streamIngestDirInc()) setVectorizeEvents((p) => [...p, ev])
+    } catch (e) {
+      setMsg(`矢量化失败: ${String(e)}`)
     }
     setBusy(null)
     void refresh()
@@ -492,13 +497,22 @@ function SystemTab() {
     }
   }
 
-  const doReset = async () => {
-    setResetConfirm(false)
+  const doClear = async (action: 'reset' | 'clean' | 'ingest') => {
+    setConfirmClear(null)
     try {
-      await resetStore()
+      if (action === 'reset') {
+        await resetStore()
+        setMsg('已清空向量库')
+      } else if (action === 'clean') {
+        await clearCleanState()
+        setMsg('已清空清洗记录 — 下次「清洗数据」将全量清洗')
+      } else {
+        await clearIngestState()
+        setMsg('已清空切片记录 — 下次「矢量化数据」将全量切片')
+      }
       void refresh()
-    } catch {
-      /* ignore */
+    } catch (e) {
+      setMsg(String(e))
     }
   }
 
@@ -506,22 +520,23 @@ function SystemTab() {
     <div className="space-y-4">
       {/* 数据管线 */}
       <Card title="数据管线" icon={<Database className="h-5 w-5" />}>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <ActionBtn
-            onClick={runClean}
+            onClick={runCleanInc}
             disabled={busy !== null}
             icon={<Wand2 className="h-4 w-4" />}
-            label={busy === 'clean' ? '清洗中…' : '清洗 (raw-data → md-data)'}
+            label={busy === 'clean_inc' ? '清洗中…' : '清洗数据'}
           />
           <ActionBtn
-            onClick={runIngest}
+            onClick={runVectorizeInc}
             disabled={busy !== null}
             icon={<Upload className="h-4 w-4" />}
-            label={busy === 'ingest' ? '切片中…' : '切片入库 (md-data → 索引)'}
+            label={busy === 'vectorize' ? '矢量化中…' : '矢量化数据'}
           />
         </div>
-        {cleanEvents.length > 0 && <EventLog title="清洗进度" events={cleanEvents} />}
-        {ingestEvents.length > 0 && <EventLog title="切片进度" events={ingestEvents} />}
+        {msg && <p className="mt-2 text-sm text-gray-600">{msg}</p>}
+        {cleanIncEvents.length > 0 && <EventLog title="清洗数据进度" events={cleanIncEvents} />}
+        {vectorizeEvents.length > 0 && <EventLog title="矢量化进度" events={vectorizeEvents} />}
       </Card>
 
       {/* 系统信息 */}
@@ -593,28 +608,31 @@ function SystemTab() {
         )}
       </Card>
 
-      {/* 向量库 */}
+      {/* 向量库（危险操作） */}
       <Card title="向量库" icon={<Database className="h-5 w-5" />}>
-        {!resetConfirm ? (
-          <button
-            onClick={() => setResetConfirm(true)}
-            className="flex items-center gap-2 rounded bg-red-600 px-4 py-2 text-sm text-white hover:brightness-95"
-          >
-            <Trash2 className="h-4 w-4" />
-            清空向量库
-          </button>
-        ) : (
-          <div className="flex items-center gap-3 rounded-lg border border-red-300 bg-red-50 p-3">
+        <div className="flex flex-wrap gap-2">
+          <DangerBtn onClick={() => setConfirmClear('reset')} disabled={busy !== null} label="清空向量库" />
+          <DangerBtn onClick={() => setConfirmClear('clean')} disabled={busy !== null} label="清空清洗记录" />
+          <DangerBtn onClick={() => setConfirmClear('ingest')} disabled={busy !== null} label="清空切片记录" />
+        </div>
+        {confirmClear && (
+          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-red-300 bg-red-50 p-3">
             <AlertTriangle className="h-5 w-5 text-red-600" />
-            <span className="text-sm text-red-700">确认清空所有向量？不可恢复！</span>
+            <span className="text-sm text-red-700">
+              {confirmClear === 'reset'
+                ? '确认清空整个向量库？所有切片不可恢复！'
+                : confirmClear === 'clean'
+                  ? '确认清空清洗记录？下次「清洗数据」将全量清洗。'
+                  : '确认清空切片记录？下次「矢量化数据」将全量切片。'}
+            </span>
             <button
-              onClick={doReset}
+              onClick={() => doClear(confirmClear)}
               className="rounded bg-red-600 px-3 py-1 text-sm text-white"
             >
               确认清空
             </button>
             <button
-              onClick={() => setResetConfirm(false)}
+              onClick={() => setConfirmClear(null)}
               className="rounded bg-gray-300 px-3 py-1 text-sm"
             >
               取消
@@ -623,6 +641,27 @@ function SystemTab() {
         )}
       </Card>
     </div>
+  )
+}
+
+function DangerBtn({
+  onClick,
+  disabled,
+  label,
+}: {
+  onClick: () => void
+  disabled: boolean
+  label: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="flex items-center gap-2 rounded bg-red-600 px-4 py-2 text-sm text-white hover:brightness-95 disabled:opacity-50"
+    >
+      <Trash2 className="h-4 w-4" />
+      {label}
+    </button>
   )
 }
 
@@ -999,7 +1038,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   )
 }
 
-function EventLog({ title, events }: { title: string; events: IngestEvent[] }) {
+function EventLog({ title, events }: { title: string; events: CleanEvent[] }) {
   return (
     <div className="mt-3 rounded-lg bg-gray-900 p-3 text-xs text-gray-300">
       <div className="mb-1 font-medium text-gray-400">{title}</div>
@@ -1010,8 +1049,21 @@ function EventLog({ title, events }: { title: string; events: IngestEvent[] }) {
             {ev.type === 'file_done' &&
               `${ev.status === 'ok' ? '✓' : '✗'} ${ev.source_doc}${ev.n_chunks ? ` (${ev.n_chunks} 切片)` : ''}`}
             {ev.type === 'skipped' && `⊘ ${ev.source_doc}`}
+            {ev.type === 'file_skipped' && `↷ ${ev.source_doc}（未变动，跳过）`}
+            {ev.type === 'deleted' && `🗑 ${ev.source_doc}`}
             {ev.type === 'summary' &&
-              `📊 完成: ${ev.n_docs} 文档 / ${ev.n_chunks} 切片 / ${ev.elapsed_s}s`}
+              `📊 ` +
+                [
+                  ev.n_cleaned != null && `清洗 ${ev.n_cleaned}`,
+                  ev.n_skipped != null && `跳过 ${ev.n_skipped}`,
+                  ev.n_deleted != null && `删除 ${ev.n_deleted}`,
+                  ev.n_docs != null && `切片 ${ev.n_docs} 文档`,
+                  ev.n_chunks != null && `${ev.n_chunks} 块`,
+                  ev.n_failed != null && `失败 ${ev.n_failed}`,
+                  ev.elapsed_s != null && `${ev.elapsed_s}s`,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
           </div>
         ))}
       </div>
