@@ -65,6 +65,10 @@ AomeRAG-Server-<date>/
 
 ## 更新流程
 
+> **⚠️ 重要：首次装好后，以后所有更新都走下面的「更新包」，不要再重拷整个 `AomeRAG-Server-<date>` 文件夹。**
+> 服务器上的 `runtime/`（便携 Python+依赖）和 `tools/`（pandoc）共约 557MB，**从不变**；
+> 每次重拷全量包等于把这 557MB + 上万个小文件白白传一遍，又慢又没意义。更新包只含变更部分。
+
 知识库更新（先在开发机 `/admin` 跑清洗+切片，确认索引新了再打）：
 
 ```powershell
@@ -78,6 +82,11 @@ powershell -ExecutionPolicy Bypass -File deploy\build_update.ps1 -Type app
 ```
 
 把生成的 `update-*.zip` 拷到服务器 `updates\` 文件夹，双击「重启.bat」→ 自动解压覆盖到 `app\` 并重启。**会话历史 `data/sessions.db` 永远保留**（更新包不含它）。
+
+`build_update.ps1` 打包后会自动自检（用开发机 venv 起 app）：
+- `-Type kb`：打开更新包里的 zvec 索引，断言 `n_chunks > 0`（防止交付空/半写索引）
+- `-Type app`：用更新包里的新代码干净启动（不依赖开发机索引）
+- 自检失败会**拒绝生成更新包**；紧急时可用 `-SkipCheck` 跳过（不建议）
 
 ## 注意事项 / 已知限制
 
