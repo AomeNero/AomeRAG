@@ -3,6 +3,8 @@ schema mirrors migrations/001_init_sessions.sql."""
 
 from __future__ import annotations
 
+import asyncio
+import sqlite3
 from pathlib import Path
 
 import aiosqlite
@@ -56,6 +58,18 @@ CREATE TABLE IF NOT EXISTS chunk_meta (
     created_at   REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_chunk_meta_source ON chunk_meta (source_doc, chunk_index);
+
+CREATE TABLE IF NOT EXISTS clean_state (
+    path         TEXT PRIMARY KEY,
+    content_hash TEXT NOT NULL,
+    updated_at   REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ingest_state (
+    path         TEXT PRIMARY KEY,
+    content_hash TEXT NOT NULL,
+    updated_at   REAL NOT NULL
+);
 """
 
 
@@ -67,5 +81,39 @@ async def open_db(path: str) -> aiosqlite.Connection:
     for pragma in _PRAGMAS:
         await db.execute(pragma)
     await db.executescript(_SCHEMA)
-    await db.commit()
+    await _migrate_state_columns(db)
     return db
+
+
+async def _migrate_state_columns(db: aiosqlite.Connection) -> None:
+    """Normalize legacy state-table timestamp columns (`cleaned_at` / `ingested_at`) to
+    `updated_at`. `CREATE TABLE IF NOT EXISTS` does NOT alter existing tables, so a table
+    created before the rename keeps the old column and every write fails otherwise."""
+    for table in ("clean_state", "ingest_state"):
+        cur = await db.execute(f"PRAGMA table_info({table})")
+        cols = {r["name"] for r in await cur.fetchall()}
+        if "updated_at" not in cols:
+            for old in ("cleaned_at", "ingested_at"):
+                if old in cols:
+                    await db.execute(f"ALTER TABLE {table} RENAME COLUMN {old} TO updated_at")
+                    break
+    await db.commit()
+
+
+async def write_with_retry(
+    db: aiosqlite.Connection, fn, retries: int = 3, delay: float = 1.0
+) -> None:
+    """Run a DB write (`fn` executes statements + commits) robustly:
+    rolls back on ANY error so a failed write can never leak an open transaction
+    (which would hold the write lock and break every later write), and retries a
+    few times on transient `database is locked`."""
+    for attempt in range(retries):
+        try:
+            await fn()
+            return
+        except sqlite3.OperationalError as e:
+            await db.rollback()
+            if "locked" in str(e).lower() and attempt < retries - 1:
+                await asyncio.sleep(delay)
+                continue
+            raise

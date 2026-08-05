@@ -10,6 +10,7 @@ shorter / re-chunking leaves no stale chunks."""
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import time
 from collections.abc import AsyncIterator
@@ -56,6 +57,7 @@ class IngestionPipeline:
         *,
         embed_batch: int = 16,
         chunk_meta: object | None = None,
+        ingest_state: object | None = None,
     ) -> None:
         self._parser = parser
         self._chunker = chunker
@@ -65,6 +67,7 @@ class IngestionPipeline:
         self._executor = executor
         self._batch = embed_batch
         self._chunk_meta = chunk_meta  # optional ChunkMetaStore — None in legacy call sites
+        self._ingest_state = ingest_state  # optional StateStore — None in legacy call sites
 
     async def _make_chunks(
         self, source_doc: str, markdown: str, department: str | None
@@ -249,3 +252,77 @@ class IngestionPipeline:
             except Exception:  # noqa: BLE001 - one bad file must not abort the sync
                 continue
         return counts
+
+    async def incremental_ingest(self, md_data_dir: str) -> AsyncIterator[dict]:
+        """Incremental ingest: only re-ingest NEW/MODIFIED md files (content-hash vs
+        ingest_state), remove chunks for REMOVED docs, and persist the new state.
+        Needs Ollama online (embedding). Yields scan / file_start / file_done / skipped /
+        deleted / summary events."""
+        loop = asyncio.get_running_loop()
+        base = Path(md_data_dir)
+        t0 = time.monotonic()
+        prev: dict[str, str] = {}
+        if self._ingest_state is not None:
+            prev = await self._ingest_state.load()
+        scanned: set[str] = set()
+        new_state: dict[str, str] = {}
+        pending: list[tuple[str, str]] = []  # (source_doc, abs path) for changed/new
+        n_skipped = 0
+
+        if base.is_dir():
+            for p in sorted(base.rglob("*")):
+                rel = p.relative_to(base).as_posix()
+                if rel.startswith("images/") or rel == "images":
+                    continue
+                if p.name.startswith("~"):
+                    continue  # temp/hidden files
+                if not p.is_file() or p.suffix.lower() != ".md":
+                    continue
+                scanned.add(rel)
+                try:
+                    data = await loop.run_in_executor(self._executor, _read_file, str(p))
+                    h = hashlib.sha1(data).hexdigest()
+                except Exception:  # noqa: BLE001
+                    continue  # unreadable → not recorded, retried next time
+                new_state[rel] = h
+                if prev.get(rel) == h:
+                    n_skipped += 1
+                    yield {"type": "file_skipped", "source_doc": rel}
+                else:
+                    pending.append((rel, str(p)))
+
+        yield {"type": "scan", "raw_dir": md_data_dir, "n_files": len(scanned)}
+
+        n_ingested = 0
+        if pending:
+            async for ev in self.ingest_files(pending):
+                if ev["type"] == "summary":
+                    continue  # we emit our own summary at the end
+                if ev["type"] == "file_done" and ev.get("status") == "ok":
+                    n_ingested += 1
+                elif ev["type"] == "file_done" and ev.get("status") == "error":
+                    new_state.pop(ev["source_doc"], None)  # failed → retry next time
+                yield ev
+
+        # remove chunks for removed docs
+        n_deleted = 0
+        for doc in prev:
+            if doc not in scanned:
+                async with self._lock:
+                    await loop.run_in_executor(self._executor, self._store.delete_by_source, doc)
+                    if self._chunk_meta is not None:
+                        await self._chunk_meta.delete_source(doc)
+                n_deleted += 1
+                yield {"type": "deleted", "source_doc": doc}
+
+        if self._ingest_state is not None:
+            await self._ingest_state.save_all(new_state)
+
+        yield {
+            "type": "summary",
+            "n_ingested": n_ingested,
+            "n_skipped": n_skipped,
+            "n_deleted": n_deleted,
+            "errors": [],
+            "elapsed_s": round(time.monotonic() - t0, 2),
+        }

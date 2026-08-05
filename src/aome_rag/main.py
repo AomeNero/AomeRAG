@@ -37,6 +37,7 @@ from .retrieval.retriever import Retriever
 from .retrieval.store import ZvecStore
 from .services import Services  # noqa: F401
 from .session.chunk_meta import ChunkMetaStore
+from .session.clean_state import CleanStateStore
 from .session.db import open_db
 from .session.store import SessionStore
 from .tools.clarify import ClarifySkill
@@ -64,6 +65,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.session_db = ov.get("session_db") or await open_db(settings.sqlite_path)
     app.state.session_store = ov.get("session_store") or SessionStore(app.state.session_db)
     app.state.chunk_meta = ov.get("chunk_meta") or ChunkMetaStore(app.state.session_db)
+    app.state.clean_state = ov.get("clean_state") or CleanStateStore(app.state.session_db)
+    app.state.ingest_state = ov.get("ingest_state") or CleanStateStore(
+        app.state.session_db, "ingest_state"
+    )
 
     # --- retrieval ---
     built_embedder = "embedder" not in ov
@@ -82,11 +87,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         Parser(), Chunker(), app.state.embedder, app.state.store,
         app.state.ingestion_lock, app.state.zvec_executor,
         chunk_meta=app.state.chunk_meta,
+        ingest_state=app.state.ingest_state,
     )
 
     # --- cleaning (raw-data → md-data) ---
     app.state.cleaning = ov.get("cleaning") or CleaningPipeline(
-        Converter(), app.state.zvec_executor
+        Converter(), app.state.zvec_executor, clean_state=app.state.clean_state
     )
 
     # --- provider ---

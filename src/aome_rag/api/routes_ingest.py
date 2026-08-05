@@ -83,3 +83,23 @@ async def ingest_dir(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/ingest/dir/inc")
+async def ingest_dir_inc(
+    user: User = Depends(get_current_user),
+    state=Depends(get_state),
+):
+    """Incremental ingest: only re-slice NEW/MODIFIED md files (content-hash vs
+    ingest_state), drop chunks for REMOVED docs. SSE. Needs Ollama online (embedding)."""
+    md_dir = state.settings.md_data_dir
+
+    async def gen():
+        async for ev in state.ingestion.incremental_ingest(md_dir):
+            yield sse_event(ev)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

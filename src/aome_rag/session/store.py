@@ -11,6 +11,7 @@ import aiosqlite
 
 from aome_rag.providers.messages import Message
 
+from .db import write_with_retry
 from .models import SessionMeta
 
 
@@ -49,11 +50,15 @@ class SessionStore:
     async def create_session(self, user_id: str, title: str | None = None) -> str:
         sid = uuid.uuid4().hex
         now = time.time()
-        await self._db.execute(
-            "INSERT INTO sessions(id, user_id, title, created_at, updated_at) VALUES (?,?,?,?,?)",
-            (sid, user_id, title, now, now),
-        )
-        await self._db.commit()
+
+        async def _do() -> None:
+            await self._db.execute(
+                "INSERT INTO sessions(id, user_id, title, created_at, updated_at) VALUES (?,?,?,?,?)",
+                (sid, user_id, title, now, now),
+            )
+            await self._db.commit()
+
+        await write_with_retry(self._db, _do)
         return sid
 
     async def get_messages(
@@ -94,15 +99,19 @@ class SessionStore:
                 (session_id, user_id, None, now, now),
             )
         mid = uuid.uuid4().hex
-        await self._db.execute(
-            "INSERT INTO messages(id, session_id, user_id, role, content_json, created_at) "
-            "VALUES (?,?,?,?,?,?)",
-            (mid, session_id, user_id, msg.role, msg.model_dump_json(), now),
-        )
-        await self._db.execute(
-            "UPDATE sessions SET updated_at=? WHERE id=?", (now, session_id)
-        )
-        await self._db.commit()
+
+        async def _do() -> None:
+            await self._db.execute(
+                "INSERT INTO messages(id, session_id, user_id, role, content_json, created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (mid, session_id, user_id, msg.role, msg.model_dump_json(), now),
+            )
+            await self._db.execute(
+                "UPDATE sessions SET updated_at=? WHERE id=?", (now, session_id)
+            )
+            await self._db.commit()
+
+        await write_with_retry(self._db, _do)
 
     async def list_all_sessions(self, limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
         """Admin: list sessions across ALL users (not scoped)."""
@@ -125,24 +134,28 @@ class SessionStore:
     async def submit_feedback(self, data: dict[str, Any]) -> str:
         """Insert a feedback record. Returns the feedback id."""
         fid = uuid.uuid4().hex
-        await self._db.execute(
-            "INSERT INTO feedback(id, type, session_id, user_id, message_id, rating, "
-            "user_question, ai_answer, comment, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (
-                fid,
-                data.get("type", ""),
-                data.get("session_id"),
-                data.get("user_id", ""),
-                data.get("message_id"),
-                data.get("rating"),
-                data.get("user_question"),
-                data.get("ai_answer"),
-                data.get("comment"),
-                time.time(),
-            ),
-        )
-        await self._db.commit()
+
+        async def _do() -> None:
+            await self._db.execute(
+                "INSERT INTO feedback(id, type, session_id, user_id, message_id, rating, "
+                "user_question, ai_answer, comment, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (
+                    fid,
+                    data.get("type", ""),
+                    data.get("session_id"),
+                    data.get("user_id", ""),
+                    data.get("message_id"),
+                    data.get("rating"),
+                    data.get("user_question"),
+                    data.get("ai_answer"),
+                    data.get("comment"),
+                    time.time(),
+                ),
+            )
+            await self._db.commit()
+
+        await write_with_retry(self._db, _do)
         return fid
 
     async def list_all_feedback(self, limit: int = 200) -> list[dict[str, Any]]:
@@ -156,9 +169,12 @@ class SessionStore:
         return [dict(r) for r in rows]
 
     async def delete_feedback(self, feedback_id: str) -> bool:
-        cur = await self._db.execute("DELETE FROM feedback WHERE id=?", (feedback_id,))
-        await self._db.commit()
-        return cur.rowcount > 0
+        async def _do() -> None:
+            await self._db.execute("DELETE FROM feedback WHERE id=?", (feedback_id,))
+            await self._db.commit()
+
+        await write_with_retry(self._db, _do)
+        return True
 
     async def delete_session(self, session_id: str, user_id: str) -> bool:
         row = await self._fetchone(
@@ -166,9 +182,13 @@ class SessionStore:
         )
         if row is None or row["user_id"] != user_id:
             return False
-        await self._db.execute("DELETE FROM messages WHERE session_id=?", (session_id,))
-        await self._db.execute("DELETE FROM sessions WHERE id=?", (session_id,))
-        await self._db.commit()
+
+        async def _do() -> None:
+            await self._db.execute("DELETE FROM messages WHERE session_id=?", (session_id,))
+            await self._db.execute("DELETE FROM sessions WHERE id=?", (session_id,))
+            await self._db.commit()
+
+        await write_with_retry(self._db, _do)
         return True
 
     async def set_title(self, session_id: str, user_id: str, title: str) -> bool:
@@ -178,11 +198,15 @@ class SessionStore:
         )
         if row is None or row["user_id"] != user_id:
             return False
-        await self._db.execute(
-            "UPDATE sessions SET title=?, updated_at=? WHERE id=?",
-            (title, time.time(), session_id),
-        )
-        await self._db.commit()
+
+        async def _do() -> None:
+            await self._db.execute(
+                "UPDATE sessions SET title=?, updated_at=? WHERE id=?",
+                (title, time.time(), session_id),
+            )
+            await self._db.commit()
+
+        await write_with_retry(self._db, _do)
         return True
 
     async def search_messages(
