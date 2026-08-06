@@ -112,9 +112,10 @@ function Message({
   const hits = m.toolEvents?.flatMap((t) => t.details ?? []) ?? []
   const ring = highlight ? 'ring-2 ring-brand rounded-lg' : ''
 
-  // detect "no results": a tool_result with details === [] (empty array, search ran but 0 hits)
+  // detect "no results": a tool_result with details === [] (empty array, search ran but 0 hits).
+  // details may be null for non-kb_search tools (bash/read/write/edit) — Array.isArray guards that.
   const hadEmptySearch = m.toolEvents?.some(
-    (t) => t.status === 'ok' && t.details !== undefined && t.details.length === 0
+    (t) => t.status === 'ok' && Array.isArray(t.details) && t.details.length === 0
   ) ?? false
 
   const rate = async (rating: 'up' | 'down', comment?: string) => {
@@ -165,6 +166,15 @@ function Message({
     )
   }
 
+  // 空助手消息（无内容/无错误/非流式/非澄清/非最后一条带工具）不渲染，避免历史里堆空行
+  const hasVisible =
+    !!m.content.trim() ||
+    !!m.error ||
+    streaming ||
+    !!m.isClarify ||
+    (isLast && (m.toolEvents?.length ?? 0) > 0)
+  if (!hasVisible) return null
+
   return (
     <div data-midx={index} className={`mb-6 p-px ${ring}`}>
       {m.isClarify && (
@@ -172,9 +182,16 @@ function Message({
           💬 需要补充信息
         </div>
       )}
-      {m.toolEvents?.map((t) => (
-        <ToolChip key={t.id} t={t} expanded={showDetails} clickable={!!t.details} onClick={() => setShowDetails((v) => !v)} elapsed={m.turnElapsed} />
-      ))}
+      {/* 只给最后一条 assistant 消息显示工具状态条；流式进行中即使还没工具事件也显示"正在生成" */}
+      {isLast && (streaming || (m.toolEvents?.length ?? 0) > 0) && (
+        <SearchChip
+          toolEvents={m.toolEvents ?? []}
+          elapsed={m.turnElapsed}
+          expanded={showDetails}
+          streaming={streaming}
+          onClick={() => setShowDetails((v) => !v)}
+        />
+      )}
       {showDetails && hits.length > 0 && <DetailsPanel hits={hits} />}
       <div className="text-[15px] leading-7 text-foreground">
         {m.content ? (
@@ -289,39 +306,80 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
   )
 }
 
-function ToolChip({
-  t,
-  expanded,
-  clickable,
-  onClick,
+/** 工具活动名称映射：进行中状态显示具体动作，避免笼统的"正在检索"让用户以为卡死 */
+function toolActivity(name: string): string {
+  switch (name) {
+    case 'kb_search': return '正在检索知识库'
+    case 'read': return '正在读取文件'
+    case 'write': return '正在生成文件'
+    case 'edit': return '正在修改文件'
+    case 'bash': return '正在执行命令'
+    case 'load_skill': return '正在加载技能'
+    default: return '正在处理'
+  }
+}
+
+/** 聚合的工具状态条：进行中显示"正在生成 + 实时用时"（秒数跳动=在干活），完成显示条数/耗时 */
+function SearchChip({
+  toolEvents,
   elapsed,
+  expanded,
+  streaming,
+  onClick,
 }: {
-  t: ToolEvent
-  expanded: boolean
-  clickable: boolean
-  onClick: () => void
+  toolEvents: ToolEvent[]
   elapsed?: number
+  expanded: boolean
+  streaming: boolean
+  onClick: () => void
 }) {
-  let label = '正在检索'
-  let icon: ReactNode = <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" strokeWidth={2} />
+  const [now, setNow] = useState(() => Date.now())
+  const startedAt = useRef<number | null>(null)
+  useEffect(() => {
+    if (streaming) {
+      if (startedAt.current === null) startedAt.current = Date.now()
+      const id = setInterval(() => setNow(Date.now()), 500)
+      return () => clearInterval(id)
+    }
+    startedAt.current = null
+  }, [streaming])
+
+  const runningTool = [...toolEvents].reverse().find((t) => t.status === 'running')
+  const searches = toolEvents.filter((t) => t.name === 'kb_search')
+  const anyError = toolEvents.some((t) => t.status === 'error')
+  const hits = toolEvents.flatMap((t) => (Array.isArray(t.details) ? t.details : []))
+  // 刷新后 details 缺失，用 content 里的 "[N]" 计数兜底
+  const contentCount = toolEvents.reduce(
+    (s, t) => s + ((t.content?.match(/^\[\d+\]/gm) ?? []).length),
+    0,
+  )
+  const n = hits.length > 0 ? hits.length : contentCount
+  const clickable = hits.length > 0
+
+  let label: string
+  let icon: ReactNode
   let tone = 'text-muted'
-  if (t.status === 'ok') {
-    const n = t.details?.length ?? (t.content?.match(/^\[\d+\]/gm) ?? []).length
-    const src = t.details?.[0]?.source_doc ?? t.content?.match(/source=([^\s>]+)/)?.[1]
-    label = n > 0 ? `知识库检索 · ${n} 条` : '知识库检索完成（0 条）'
-    if (elapsed != null) label += ` · 用时 ${elapsed.toFixed(1)} 秒`
-    if (src) label += ` · ${src}`
-    icon = <Check className="h-3.5 w-3.5 text-brand" strokeWidth={2} />
-    tone = 'text-foreground'
-  } else if (t.status === 'cancelled') {
-    label = '已跳过'
-    icon = <span className="text-muted">⊘</span>
-    tone = 'text-muted'
-  } else if (t.status === 'error') {
-    label = '知识库检索失败'
+  if (streaming) {
+    // 整个生成过程都显示明确的"进行中"状态（转圈 + 秒数跳动），避免用户以为卡死
+    label = runningTool ? toolActivity(runningTool.name) : '正在生成…'
+    icon = <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" strokeWidth={2} />
+    tone = 'text-brand'
+  } else if (anyError) {
+    label = '处理出错'
     icon = <span className="text-red-500">⚠</span>
     tone = 'text-red-600'
+  } else if (searches.length > 0) {
+    label = n > 0 ? `知识库检索 · ${n} 条` : '知识库检索完成（0 条）'
+    icon = <Check className="h-3.5 w-3.5 text-brand" strokeWidth={2} />
+    tone = 'text-foreground'
+  } else {
+    label = `已使用 ${toolEvents.length} 个工具`
+    icon = <Check className="h-3.5 w-3.5 text-brand" strokeWidth={2} />
+    tone = 'text-foreground'
   }
+  // 进行中实时跳动用时，结束后用最终 turnElapsed
+  const shownElapsed = streaming && startedAt.current != null ? (now - startedAt.current) / 1000 : elapsed
+  if (shownElapsed != null) label += ` · 用时 ${shownElapsed.toFixed(1)} 秒`
 
   const cls = `mb-2 inline-flex items-center gap-1.5 rounded-full bg-field px-2.5 py-1 text-xs ${tone} ${
     clickable ? 'cursor-pointer transition hover:bg-hover' : ''
@@ -565,6 +623,14 @@ function PreBlock({ children }: { children?: ReactNode }) {
   )
 }
 
+/** 把裸的 /workspace/ 路径转成可点击的 markdown 链接（已在链接内/代码里的不动），
+ *  兜底 agent 有时以纯文本输出下载路径的情况 */
+function linkifyWorkspace(text: string): string {
+  return text.replace(/(^|[^`\[(])(\/workspace\/[^\s)\]`|，。；;]+)/g, (_m, pre, path) => {
+    return `${pre}[${path}](${path})`
+  })
+}
+
 function Markdown({ text }: { text: string }) {
   const [preview, setPreview] = useState<string | null>(null)
   return (
@@ -582,7 +648,7 @@ function Markdown({ text }: { text: string }) {
         ]}
         components={buildMdComponents(setPreview)}
       >
-        {text}
+        {linkifyWorkspace(text)}
       </ReactMarkdown>
       {preview && <ImagePreview src={preview} onClose={() => setPreview(null)} />}
     </>
