@@ -73,11 +73,14 @@ class Settings(BaseSettings):
     log_access_to_file: bool = True  # uvicorn per-request access logs
     log_retention_days: int = 30  # daily files kept, then auto-deleted
 
+    # ---- Agent workspace (sandbox for the built-in read/write/edit/bash tools) ----
+    workspace_dir: str = "./workspace"
+
     def model_post_init(self, __context: object) -> None:
         """Resolve relative paths against the project root so CWD doesn't matter."""
         for field in (
             "zvec_path", "sqlite_path", "skills_dir",
-            "raw_data_dir", "md_data_dir", "frontend_dist", "log_dir",
+            "raw_data_dir", "md_data_dir", "frontend_dist", "log_dir", "workspace_dir",
         ):
             p = Path(getattr(self, field))
             if not p.is_absolute():

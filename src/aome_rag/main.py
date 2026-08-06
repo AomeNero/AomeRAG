@@ -44,6 +44,7 @@ from .tools.clarify import ClarifySkill
 from .tools.kb_search import KbSearchSkill
 from .tools.registry import SkillRegistry
 from .tools.skill_loader import SkillLoaderSkill
+from .tools.workspace import BashTool, EditTool, ReadTool, WriteTool
 
 
 @asynccontextmanager
@@ -117,6 +118,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         registry.register(KbSearchSkill())
         registry.register(ClarifySkill())
         registry.register(SkillLoaderSkill())
+        registry.register(ReadTool(settings.workspace_dir))
+        registry.register(WriteTool(settings.workspace_dir))
+        registry.register(EditTool(settings.workspace_dir))
+        registry.register(BashTool(settings.workspace_dir))
         registry.discover(settings.skills_dir)
         app.state.skills = registry
 
@@ -157,8 +162,17 @@ def create_app(settings: Settings | None = None, *, overrides: dict | None = Non
     # Mount /images BEFORE the catch-all frontend `/` mount, or the root static mount
     # (which matches everything) would shadow it and /images/* would 404.
     _maybe_mount_images(app)
+    _maybe_mount_workspace(app)
     _maybe_mount_frontend(app)
     return app
+
+
+def _maybe_mount_workspace(app: FastAPI) -> None:
+    """Serve the agent workspace at /workspace/ so generated files are downloadable.
+    Mounted before the catch-all frontend mount; the dir is created on demand."""
+    ws = Path(app.state.settings.workspace_dir)
+    ws.mkdir(parents=True, exist_ok=True)
+    app.mount("/workspace", StaticFiles(directory=str(ws)), name="workspace")
 
 
 def _maybe_mount_images(app: FastAPI) -> None:
