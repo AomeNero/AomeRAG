@@ -2,7 +2,7 @@ import pytest
 
 from aome_rag.providers.base import Finish, TextDelta, ToolCallDelta
 from aome_rag.providers.errors import ToolCallParseError
-from aome_rag.providers.messages import Message, ToolResultBlock, ToolUseBlock
+from aome_rag.providers.messages import Message, TextBlock, ToolResultBlock, ToolUseBlock
 from aome_rag.providers.openai_compat import (
     messages_to_openai,
     parse_stream_chunk,
@@ -130,6 +130,29 @@ def test_messages_to_openai() -> None:
     assert wire[2]["tool_calls"][0]["id"] == "call_1"
     assert wire[2]["tool_calls"][0]["function"]["arguments"] == '{"query": "x"}'
     assert wire[3] == {"role": "tool", "tool_call_id": "call_1", "content": "hit"}
+
+
+def test_messages_to_openai_fans_out_embedded_tool_result() -> None:
+    # clarify persists its result INSIDE the assistant message; the wire format must still
+    # pair every tool_calls with a trailing tool message or OpenAI-compatible APIs 400.
+    msgs = [
+        Message.text("user", "328产品"),
+        Message(
+            role="assistant",
+            blocks=[
+                TextBlock(text="选A/B/C?"),
+                ToolUseBlock(id="call_c", name="clarify", arguments={"question": "x"}),
+                ToolResultBlock(tool_use_id="call_c", content="", is_error=False),
+            ],
+        ),
+        Message.text("user", "A 电源规格"),
+    ]
+    wire = messages_to_openai(msgs)
+    assert wire[1]["role"] == "assistant"
+    assert wire[1]["tool_calls"][0]["id"] == "call_c"
+    # embedded result must be emitted as a trailing tool message (between assistant and user)
+    assert wire[2] == {"role": "tool", "tool_call_id": "call_c", "content": ""}
+    assert wire[3] == {"role": "user", "content": "A 电源规格"}
 
 
 def test_parse_stream_chunk() -> None:

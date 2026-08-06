@@ -62,6 +62,15 @@ def messages_to_openai(messages: list[Message]) -> list[dict[str, Any]]:
             if tool_calls:
                 entry["tool_calls"] = tool_calls
             out.append(entry)
+            # An assistant message may also carry embedded tool results (clarify persists
+            # its result inside the assistant message). Emit them as trailing "tool" role
+            # messages so the wire format always pairs every tool_calls with a result —
+            # otherwise OpenAI-compatible APIs reject the conversation with 400.
+            for b in m.blocks:
+                if isinstance(b, ToolResultBlock):
+                    out.append(
+                        {"role": "tool", "tool_call_id": b.tool_use_id, "content": b.content}
+                    )
         elif m.role == "tool":
             # One internal tool-message may carry several results -> fan out to N role:"tool".
             for b in m.blocks:

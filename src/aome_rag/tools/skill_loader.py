@@ -45,18 +45,24 @@ class SkillLoaderSkill:
 
     @staticmethod
     def _extract_desc(path: Path) -> str:
-        """First '# heading' line, or filename stem as fallback."""
+        """YAML frontmatter `description:` field (the trigger guidance), falling back
+        to the first '# heading', then the filename stem."""
         try:
-            with open(path, encoding="utf-8", errors="replace") as f:
-                for _ in range(10):
-                    line = f.readline()
-                    if not line:
-                        break
-                    if line.startswith("# "):
-                        return line[2:].strip()
+            text = Path(path).read_text(encoding="utf-8", errors="replace")
         except OSError:
-            pass
-        return path.stem
+            return Path(path).stem
+        lines = text.splitlines()
+        if lines and lines[0].strip() == "---":
+            for line in lines[1:]:
+                stripped = line.strip()
+                if stripped == "---":
+                    break
+                if stripped.startswith("description:"):
+                    return stripped[len("description:"):].strip()
+        for line in lines[:12]:
+            if line.startswith("# "):
+                return line[2:].strip()
+        return Path(path).stem
 
     @property
     def description(self) -> str:
