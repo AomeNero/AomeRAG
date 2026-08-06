@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Check, Copy, Loader2, RefreshCw, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { Check, Copy, Download, Loader2, RefreshCw, ThumbsDown, ThumbsUp } from 'lucide-react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
@@ -108,6 +108,7 @@ function Message({
   const [downComment, setDownComment] = useState('')
   const [showMissingDialog, setShowMissingDialog] = useState(false)
   const [missingText, setMissingText] = useState('')
+  const [rated, setRated] = useState<'up' | 'down' | null>(m.feedback ?? null)
   const hits = m.toolEvents?.flatMap((t) => t.details ?? []) ?? []
   const ring = highlight ? 'ring-2 ring-brand rounded-lg' : ''
 
@@ -117,7 +118,7 @@ function Message({
   ) ?? false
 
   const rate = async (rating: 'up' | 'down', comment?: string) => {
-    if (m.feedback) return
+    if (rated) return
     try {
       await submitFeedback({
         type: 'rating',
@@ -128,6 +129,7 @@ function Message({
         ai_answer: m.content,
         comment: comment?.trim() || undefined,
       })
+      setRated(rating) // 提交成功后即时变色
     } catch { /* ignore */ }
   }
 
@@ -237,6 +239,7 @@ function Message({
       {!streaming && !m.error && m.content.trim() && (
         <div className="mt-2 flex items-center gap-1 text-muted">
           <CopyButton text={m.content} />
+          <DownloadButton text={m.content} />
           {isLast && (
             <button
               onClick={onRegenerate}
@@ -248,16 +251,16 @@ function Message({
           )}
           <button
             onClick={onThumbsUp}
-            disabled={!!m.feedback}
-            className={cn('rounded-md p-1 transition hover:bg-hover', m.feedback === 'up' && 'text-brand')}
+            disabled={!!rated}
+            className={cn('rounded-md p-1 transition hover:bg-hover', rated === 'up' && 'text-brand')}
             title="好的回答"
           >
             <ThumbsUp className="h-4 w-4" strokeWidth={1.75} />
           </button>
           <button
             onClick={onThumbsDown}
-            disabled={!!m.feedback}
-            className={cn('rounded-md p-1 transition hover:bg-hover', m.feedback === 'down' && 'text-red-500')}
+            disabled={!!rated}
+            className={cn('rounded-md p-1 transition hover:bg-hover', rated === 'down' && 'text-red-500')}
             title="不好的回答"
           >
             <ThumbsDown className="h-4 w-4" strokeWidth={1.75} />
@@ -400,6 +403,35 @@ function CopyButton({ text }: { text: string }) {
       title="复制"
     >
       <Copy className="h-4 w-4" strokeWidth={1.75} />
+    </button>
+  )
+}
+
+/** Python 风格文件名 `Content_%Y%m%d%H%M%S%f.md`；%f 为 6 位微秒，JS 只有毫秒，用 ms*1000 补零模拟 */
+function downloadMarkdown(text: string): void {
+  const now = new Date()
+  const p = (n: number, w = 2) => String(n).padStart(w, '0')
+  const micro = String(now.getMilliseconds() * 1000).padStart(6, '0')
+  const stamp =
+    `${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}` +
+    `${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}${micro}`
+  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `Content_${stamp}.md`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function DownloadButton({ text }: { text: string }) {
+  return (
+    <button
+      onClick={() => downloadMarkdown(text)}
+      className="rounded-md p-1 transition hover:bg-hover"
+      title="下载为 Markdown"
+    >
+      <Download className="h-4 w-4" strokeWidth={1.75} />
     </button>
   )
 }
