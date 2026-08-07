@@ -1,11 +1,4 @@
-"""Ingestion pipeline. Two entry points sharing chunk -> embed -> [lock: delete + upsert]:
-
-- ingest(docs)            for uploaded bytes (multipart /ingest) -> IngestReport
-- ingest_files(files)     for a directory scan (/ingest/dir, SSE) -> async generator of
-                          per-file progress dicts, ending with a summary
-
-Both do per-file delete-then-insert (delete_by_source before upsert), so editing a file
-shorter / re-chunking leaves no stale chunks."""
+"""入库管线：两个入口共享 chunk → embed → [锁：delete + upsert]，支持单文件与目录扫描（SSE）。"""
 
 from __future__ import annotations
 
@@ -152,8 +145,8 @@ class IngestionPipeline:
     async def ingest_files(
         self, files: list[tuple[str, str]], department: str | None = None
     ) -> AsyncIterator[dict]:
-        """`files`: list of (source_doc, absolute_path). Yields per-file progress dicts,
-        then a final summary dict. Per file: read -> parse -> chunk -> embed -> delete+upsert."""
+        """`files`：[(source_doc, 绝对路径)] 列表。先产出每文件进度 dict，
+        再产出最终 summary dict。每文件：读 -> 解析 -> 切片 -> 向量化 -> 删后插。"""
         loop = asyncio.get_running_loop()
         t0 = time.monotonic()
         report = IngestReport()
@@ -207,8 +200,8 @@ class IngestionPipeline:
         }
 
     async def reingest_one(self, source_doc: str, md_data_dir: str) -> IngestReport:
-        """Re-ingest a single md-data document (chunk + embed + delete-then-insert).
-        Needs Ollama online (embedding). Returns an IngestReport."""
+        """重新入库单个 md-data 文档（切片 + 向量化 + 先删后插）。
+        需要 Ollama 在线（向量化）。返回 IngestReport。"""
         report = IngestReport()
         path = Path(md_data_dir) / source_doc
         async for ev in self.ingest_files([(source_doc, str(path))]):
@@ -220,11 +213,11 @@ class IngestionPipeline:
         return report
 
     async def sync_meta(self, md_data_dir: str) -> dict:
-        """Rebuild the chunk-meta side table from md-data files WITHOUT re-embedding.
+        """从 md-data 文件重建 chunk-meta 侧表（不重新向量化）。
 
-        For each .md file: re-chunk with the current chunker, then verify which candidate
-        chunk ids actually exist in the zvec collection (via fetch) — so the side table only
-        records chunks that are really indexed (docs never ingested stay 'unsliced')."""
+        对每个 .md 文件：用当前切分器重新切片，再用 fetch 校验候选 chunk id
+        是否真的存在于 zvec 集合中——这样侧表只记录真正已索引的 chunk
+        （从未入库的文档保持 'unsliced'）。"""
         loop = asyncio.get_running_loop()
         base = Path(md_data_dir)
         counts = {"n_docs": 0, "n_chunks": 0, "n_skipped": 0}
@@ -268,10 +261,9 @@ class IngestionPipeline:
         return counts
 
     async def incremental_ingest(self, md_data_dir: str) -> AsyncIterator[dict]:
-        """Incremental ingest: only re-ingest NEW/MODIFIED md files (content-hash vs
-        ingest_state), remove chunks for REMOVED docs, and persist the new state.
-        Needs Ollama online (embedding). Yields scan / file_start / file_done / skipped /
-        deleted / summary events."""
+        """增量入库：只重新入库新增/变更的 md 文件（内容哈希对比 ingest_state），
+        为已删除文档移除 chunk，并持久化新状态。需要 Ollama 在线（向量化）。
+        产出 scan / file_start / file_done / skipped / deleted / summary 事件。"""
         loop = asyncio.get_running_loop()
         base = Path(md_data_dir)
         t0 = time.monotonic()
@@ -318,7 +310,7 @@ class IngestionPipeline:
                     new_state.pop(ev["source_doc"], None)  # failed → retry next time
                 yield ev
 
-        # remove chunks for removed docs
+        # 为已删除的文档移除向量块
         n_deleted = 0
         for doc in prev:
             if doc not in scanned:

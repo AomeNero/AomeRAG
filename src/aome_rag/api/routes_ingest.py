@@ -1,4 +1,4 @@
-"""POST /ingest (multipart upload) and POST /ingest/dir (ingest a configured directory, SSE)."""
+"""POST /ingest（上传）与 /ingest/dir（目录扫描入库，SSE）。"""
 
 from __future__ import annotations
 
@@ -44,8 +44,8 @@ async def ingest_dir(
     user: User = Depends(get_current_user),
     state=Depends(get_state),
 ):
-    """Recursively ingest the configured RAW_DIR. SSE: scan -> per-file start/done/skipped
-    -> summary. .md is read directly; other supported types go through markitdown."""
+    """递归入库配置的 RAW_DIR。SSE：scan -> 每文件 start/done/skipped -> summary。
+    .md 直读；其它支持的类型走 markitdown。"""
     raw_dir = state.settings.md_data_dir
     base = Path(raw_dir)
     files: list[tuple[str, str]] = []  # (source_doc relative path, absolute path)
@@ -90,8 +90,8 @@ async def ingest_dir_inc(
     user: User = Depends(get_current_user),
     state=Depends(get_state),
 ):
-    """Incremental ingest: only re-slice NEW/MODIFIED md files (content-hash vs
-    ingest_state), drop chunks for REMOVED docs. SSE. Needs Ollama online (embedding)."""
+    """增量入库：只重新切片新增/变更的 md 文件（内容哈希对比 ingest_state），
+    为已删除文档移除 chunk。SSE。需要 Ollama 在线（向量化）。"""
     md_dir = state.settings.md_data_dir
 
     async def gen():

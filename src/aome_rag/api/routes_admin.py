@@ -1,4 +1,4 @@
-"""Admin endpoints: file listing, vector reset, cross-user sessions, KB management + SPA."""
+"""管理端接口：文件列表、向量库重置、跨用户会话与反馈管理。"""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ async def list_files(
     user: User = Depends(get_current_user),
     state=Depends(get_state),
 ) -> dict:
-    """List files in raw-data or md-data directory."""
+    """列出 raw-data 或 md-data 目录中的文件。"""
     dir_path = state.settings.raw_data_dir if type == "raw-data" else state.settings.md_data_dir
     base = Path(dir_path)
     files: list[dict] = []
@@ -36,7 +36,7 @@ async def list_files(
 async def reset_store(
     user: User = Depends(get_current_user), state=Depends(get_state)
 ) -> dict:
-    """Clear the vector store (danger zone — destroys all chunks, irreversible)."""
+    """清空向量库（危险操作——销毁所有 chunk，不可恢复）。"""
     state.store.clear()
     await state.chunk_meta.clear()
     await state.clean_state.clear()
@@ -47,7 +47,7 @@ async def reset_store(
 async def list_all_sessions(
     user: User = Depends(get_current_user), state=Depends(get_state)
 ) -> list[dict]:
-    """Admin: list sessions across ALL users (not scoped)."""
+    """管理端：列出所有用户的会话（不按用户限定）。"""
     return await state.session_store.list_all_sessions()
 
 
@@ -57,14 +57,14 @@ async def admin_get_messages(
     user: User = Depends(get_current_user),
     state=Depends(get_state),
 ) -> list[dict]:
-    """Admin: get messages for any session (no user scoping)."""
+    """管理端：获取任意会话的消息（不按用户限定）。"""
     msgs = await state.session_store.get_messages_admin(session_id)
     return [{"role": m.role, "text": m.as_text()} for m in msgs]
 
 
 @router.get("/admin", response_model=None)
 async def admin_spa(state=Depends(get_state)):
-    """Serve index.html for /admin (React Router handles client-side routing)."""
+    """为 /admin 提供 index.html（React Router 处理客户端路由）。"""
     index = Path(state.settings.frontend_dist) / "index.html"
     if index.is_file():
         return FileResponse(str(index))
@@ -72,12 +72,12 @@ async def admin_spa(state=Depends(get_state)):
 
 
 # ─── KB management (知识库管理) ──────────────────────────────────────────────
-# The admin KB page is driven by the chunk_meta side table (zvec can't enumerate
-# chunks). source_doc is passed via query param (may contain slashes/CJK).
+# 管理端知识库页由 chunk_meta 侧表驱动（zvec 无法枚举 chunk）。
+# source_doc 经查询参数传入（可能含斜杠/中文）。
 
 
 def _resolve_md(md_data_dir: str, source_doc: str) -> Path:
-    """Resolve a source_doc relative path inside md_data_dir, blocking traversal."""
+    """在 md_data_dir 内解析 source_doc 相对路径，阻止路径穿越。"""
     base = Path(md_data_dir).resolve()
     target = (base / source_doc).resolve()
     if target != base and base not in target.parents:
@@ -96,7 +96,7 @@ async def kb_docs(
     user: User = Depends(get_current_user),
     state=Depends(get_state),
 ) -> dict:
-    """Paginated KB document list = union of md-data files and chunk_meta source_docs."""
+    """分页的知识库文档列表 = md-data 文件与 chunk_meta 的 source_doc 取并集。"""
     md_dir = Path(state.settings.md_data_dir)
     files: set[str] = set()
     if md_dir.is_dir():
@@ -137,7 +137,7 @@ async def kb_chunks(
     user: User = Depends(get_current_user),
     state=Depends(get_state),
 ) -> dict:
-    """Chunk detail for one document (from the side table)."""
+    """单个文档的 chunk 详情（来自侧表）。"""
     return {"source_doc": source_doc, "chunks": await state.chunk_meta.chunks_for_source(source_doc)}
 
 
@@ -147,7 +147,7 @@ async def kb_delete_file(
     user: User = Depends(get_current_user),
     state=Depends(get_state),
 ) -> dict:
-    """Delete an md-data file only (chunks in the vector store are untouched)."""
+    """只删除 md-data 文件（向量库中的 chunk 不动）。"""
     target = _resolve_md(state.settings.md_data_dir, source_doc)
     os.remove(target)
     return {"ok": True, "source_doc": source_doc}
@@ -159,7 +159,7 @@ async def kb_delete_doc_chunks(
     user: User = Depends(get_current_user),
     state=Depends(get_state),
 ) -> dict:
-    """Delete all vector chunks of one document (zvec + side table); the md file stays."""
+    """删除某个文档的全部向量 chunk（zvec + 侧表）；md 文件保留。"""
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(state.zvec_executor, state.store.delete_by_source, source_doc)
     await state.chunk_meta.delete_source(source_doc)
@@ -172,7 +172,7 @@ async def kb_delete_chunk(
     user: User = Depends(get_current_user),
     state=Depends(get_state),
 ) -> dict:
-    """Delete a single chunk (zvec + side table)."""
+    """删除单个 chunk（zvec + 侧表）。"""
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(state.zvec_executor, state.store.delete_chunk, id)
     await state.chunk_meta.delete_chunk(id)
@@ -185,7 +185,7 @@ async def kb_reingest(
     user: User = Depends(get_current_user),
     state=Depends(get_state),
 ) -> dict:
-    """Re-ingest a single md-data document (needs Ollama online for embedding)."""
+    """重新入库单个 md-data 文档（向量化需要 Ollama 在线）。"""
     _resolve_md(state.settings.md_data_dir, source_doc)
     report = await state.ingestion.reingest_one(source_doc, state.settings.md_data_dir)
     if report.n_failed:
@@ -198,7 +198,7 @@ async def kb_sync(
     user: User = Depends(get_current_user),
     state=Depends(get_state),
 ) -> dict:
-    """Rebuild the chunk_meta side table from md-data files (no embedding)."""
+    """从 md-data 文件重建 chunk_meta 侧表（不向量化）。"""
     counts = await state.ingestion.sync_meta(state.settings.md_data_dir)
     return {"ok": True, **counts}
 

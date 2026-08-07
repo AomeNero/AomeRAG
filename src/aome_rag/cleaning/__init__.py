@@ -1,1 +1,1 @@
-"""Cleaning pipeline: raw-data → extract+clean → md-data."""
+"""清洗管线：raw-data → 提取/清洗 → md-data。"""

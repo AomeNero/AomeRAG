@@ -1,9 +1,4 @@
-"""The agent loop — s01 direct descendant.
-
-Drives the provider, forwards streamed tokens, accumulates tool calls, dispatches skills,
-appends to the working transcript, and yields observation events. Provider-agnostic and
-skill-agnostic: it imports only `LLMProvider` and `SkillRegistry` abstractions.
-"""
+"""Agent 循环：驱动 Provider 流式输出、累积工具调用、派发技能、维护对话记录、产出观察事件。"""
 
 from __future__ import annotations
 
@@ -62,8 +57,8 @@ class AgentLoop:
     async def run(
         self, history: list[Message], user_message: str
     ) -> AsyncIterator[StreamEvent]:
-        """Run one user turn. Mutates `history` in place and yields observation events.
-        The caller owns persistence."""
+        """运行一轮用户对话。原地修改 `history` 并产出观察事件。
+        持久化由调用方负责。"""
         if self.sem_agent is not None:
             await self.sem_agent.acquire()
         try:
@@ -97,7 +92,7 @@ class AgentLoop:
                         if delta.name:
                             slot["name"] = delta.name
                         slot["args"] += delta.arguments_chunk
-                    # Finish deltas need no action; the stream simply ends.
+                    # Finish delta 无需处理；流式正常结束。
 
                 calls = self._build_calls(acc)
                 text = "".join(text_parts)
@@ -175,11 +170,11 @@ class AgentLoop:
     async def _dispatch_calls(
         self, calls: list[dict[str, Any]], history: list[Message]
     ) -> tuple[list[StreamEvent], bool]:
-        """Run tool calls concurrently; return their events and whether the turn should end
-        (a skill raised EndTurn). Parse-failed calls yield error results directly.
+        """并发运行工具调用；返回它们的事件以及本轮是否应结束
+        （某个技能抛了 EndTurn）。解析失败的调用直接产出错误结果。
 
-        When any skill raises EndTurn (e.g. clarify), return immediately instead of
-        waiting for slower concurrent tasks (e.g. kb_search) to finish."""
+        当任一技能抛 EndTurn（如 clarify）时立即返回，而不是等待
+        较慢的并发任务（如 kb_search）结束。"""
         events: list[StreamEvent] = []
         errored = [c for c in calls if c["error"]]
         valid = [c for c in calls if not c["error"]]
@@ -222,18 +217,18 @@ class AgentLoop:
                     c, (ctx, kind, payload) = t.result()
                     events.extend(ctx.pending)
                     if kind == "endturn":
-                        # Write the clarify question back into the assistant message
-                        # so it survives persistence (ClarifyEvent is ephemeral/SSE-only).
+                        # 把澄清问题写回 assistant 消息，使其能持久化
+                        # （ClarifyEvent 是临时/仅 SSE 的，不落库会丢）。
                         assistant_msg = history[-1]
                         if c["name"] == "clarify":
                             q = c.get("args", {}).get("question", "")
                             if q:
                                 assistant_msg.blocks.insert(0, TextBlock(text=q))
-                        # Add a ToolResultBlock for the clarify tool so it persists
+                        # 为澄清工具加 ToolResultBlock 以便持久化
                         assistant_msg.blocks.append(
                             ToolResultBlock(tool_use_id=c["id"], content="", is_error=False)
                         )
-                        # Mark the clarify tool as completed so the frontend closes its spinner
+                        # 标记澄清工具已完成，让前端关闭其转圈
                         events.append(
                             ToolResultEvent(
                                 tool_call_id=c["id"],
@@ -242,11 +237,11 @@ class AgentLoop:
                                 content="",
                             )
                         )
-                        # Cancel remaining tasks and mark them so the frontend can close their spinners
+                        # 取消剩余任务并标记，让前端关闭对应转圈
                         for remaining in tasks:
                             remaining.cancel()
                             rc = task_to_call[remaining]
-                            # Persist the cancelled tool result so it survives reload
+                            # 持久化被取消的工具结果，刷新后仍在
                             assistant_msg.blocks.append(
                                 ToolResultBlock(tool_use_id=rc["id"], content="", is_error=False)
                             )

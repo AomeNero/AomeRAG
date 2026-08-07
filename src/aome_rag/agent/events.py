@@ -1,4 +1,4 @@
-"""Observation stream events yielded by the agent loop (serialized to SSE by the API layer)."""
+"""Agent 循环产出的事件流：token / tool_start / tool_result / clarify / final / error。"""
 
 from __future__ import annotations
 

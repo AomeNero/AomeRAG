@@ -1,6 +1,4 @@
-"""Zvec store. All zvec calls are synchronous (C bindings) — callers MUST run them via a
-threadpool executor (see Retriever / IngestionPipeline). Writes need an external lock because
-zvec writes are single-process exclusive."""
+"""Zvec 存储。所有 zvec 调用同步（C 绑定），由调用方放线程池。"""
 
 from __future__ import annotations
 
@@ -26,8 +24,8 @@ class ZvecStore:
             self._col = zvec.create_and_open(path, build_collection_schema(dim, collection_name))
 
     def upsert_chunks(self, chunks: list[dict[str, Any]]) -> None:
-        """Insert/replace chunks by id. Each chunk dict carries `id`, `dense`, and metadata
-        fields matching retrieval.schema."""
+        """按 id 插入/替换 chunk。每个 chunk dict 含 `id`、`dense` 及与
+        retrieval.schema 匹配的元数据字段。"""
         docs = [
             zvec.Doc(
                 id=c["id"],
@@ -51,7 +49,7 @@ class ZvecStore:
     def hybrid_query(
         self, dense_vec: list[float], fts_query: str, top_k: int
     ) -> list["zvec.Doc"]:
-        """Fuse dense (HNSW cosine) + FTS via RRF. Returns docs pre-ranked best-first."""
+        """用 RRF 融合 dense（HNSW 余弦）+ FTS。返回按最优优先排好的文档。"""
         queries = [
             zvec.Query(field_name=DENSE_FIELD, vector=list(dense_vec)),
             zvec.Query(field_name=TEXT_FIELD, fts=zvec.Fts(query_string=fts_query)),
@@ -64,22 +62,22 @@ class ZvecStore:
         return self._col.fetch(ids, include_vector=False)
 
     def delete_by_source(self, source_doc: str) -> None:
-        """Delete all chunks of one source document (delete-then-insert on re-ingest).
-        zvec filter DSL is SQL-like with a single `=`; string literal in double quotes."""
+        """删除某个源文档的所有 chunk（重新入库时先删后插）。
+        zvec 过滤 DSL 类似 SQL，只支持单个 `=`；字符串字面量用双引号。"""
         self._col.delete_by_filter(f'{F_SOURCE_DOC} = "{source_doc}"')
         self._col.flush()
 
     def delete_chunk(self, chunk_id: str) -> None:
-        """Delete a single chunk by its (zvec-safe) id."""
+        """按（zvec 安全的）id 删除单个 chunk。"""
         self._col.delete(chunk_id)
         self._col.flush()
 
     def chunk_count(self) -> int:
-        """Total number of chunks in the collection."""
+        """集合中的 chunk 总数。"""
         return self._col.stats.doc_count
 
     def clear(self) -> None:
-        """Destroy and recreate the collection (danger zone — wipes all chunks)."""
+        """销毁并重建集合（危险操作——清空所有 chunk）。"""
         self._col.destroy()
         self._col = zvec.create_and_open(
             self.path, build_collection_schema(self._dim, self._collection_name)

@@ -1,10 +1,9 @@
-"""Built-in workspace tools: read / write / edit / bash.
+"""内置工作区工具：read / write / edit / bash。
 
-All four operate inside a single workspace directory (default `./workspace`,
-sibling of `data/`). Path arguments are relative to the workspace root; every
-access is validated so the resolved path cannot escape the workspace. bash runs
-PowerShell with the workspace as CWD. Every call is written to the audit log
-(tools.log) with the calling user + session + command/path.
+四个工具都限定在单一工作区目录（默认 `./workspace`，与 `data/` 同级）。路径参数
+相对工作区根目录解析；每次访问都做越界校验，确保解析后的路径不能逃出工作区。
+bash 以工作区为 CWD 运行 PowerShell。每次调用都会写入审计日志（tools.log），
+记录调用用户 + 会话 + 命令/路径。
 """
 
 from __future__ import annotations
@@ -13,6 +12,7 @@ import asyncio
 import base64
 import re
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -31,10 +31,10 @@ BASH_OUTPUT_LIMIT = 4000
 
 
 def _resolve_workspace_path(workspace: Path, rel: str) -> Path:
-    """Validate a workspace-relative path and return the resolved absolute Path.
+    """校验工作区相对路径，返回解析后的绝对路径。
 
-    Raises ValueError for absolute paths, empty strings, or anything that
-    resolves outside the workspace (e.g. `..` traversal)."""
+    绝对路径、空字符串、或解析后逃出工作区（如 `..` 穿越）都会抛 ValueError。
+    这是所有文件操作的安全边界——先 resolve 再判断是否仍位于工作区内。"""
     p = Path(rel)
     if not rel or p.is_absolute() or p.anchor:
         raise ValueError(f"invalid workspace path: {rel!r}")
@@ -46,13 +46,55 @@ def _resolve_workspace_path(workspace: Path, rel: str) -> Path:
 
 
 def _audit(ctx: SkillContext, event: str, **kw: Any) -> None:
+    """审计日志：把"谁（user）+ 哪个会话（session_id）+ 干了什么（command/path）"
+    写入 tools.log。这是工作区工具的安全兜底——即便 bash 被绝对路径绕过沙箱，
+    事后也能据此追溯是谁在服务器上执行了哪条命令。"""
     user_id = getattr(ctx.user, "id", None)
     _log.info(event, user=user_id, session_id=ctx.session_id or None, **kw)
 
 
+def cleanup_workspace(workspace_dir: str | Path, retention_days: int) -> int:
+    """删除工作区中超过保留期的生成文件，再剪除被清空的目录。
+
+    关键点：删除目录内的文件会刷新目录的 mtime（变为当前时间），所以空目录要按
+    "是否为空"剪除，而不是按时间。工作区根目录本身保留。返回删除数量。
+    retention_days <= 0 时禁用清理。"""
+    if retention_days <= 0:
+        return 0
+    root = Path(workspace_dir)
+    if not root.is_dir():
+        return 0
+    cutoff = time.time() - retention_days * 86400
+    removed = 0
+    # 第一遍：自底向上删除超期的旧文件（先文件后目录，目录留到第二遍）
+    for p in sorted(root.rglob("*"), key=lambda x: len(x.parts), reverse=True):
+        if p.is_dir():
+            continue
+        try:
+            if p.stat().st_mtime < cutoff:
+                p.unlink()
+                removed += 1
+        except OSError:
+            pass  # 文件被占用 → 跳过
+    # 第二遍：剪除被第一遍清空的目录（rmdir 只在目录为空时成功）
+    for p in sorted(root.rglob("*"), key=lambda x: len(x.parts), reverse=True):
+        if not p.is_dir():
+            continue
+        try:
+            p.rmdir()
+            removed += 1
+        except OSError:
+            pass  # 目录非空 → 保留
+    if removed:
+        _log.info("workspace.cleanup", removed=removed, retention_days=retention_days)
+    return removed
+
+
 def _split_path_heading(path: str) -> tuple[str, str | None]:
-    """Split `file#heading` into (file, heading). `#` with empty heading → "" (TOC);
-    no `#` at all → None (whole file)."""
+    """拆分 `file#heading` 为 (file, heading)。
+
+    `#` 后为空标题 → ""（表示要目录 TOC）；完全没有 `#` → None（读整个文件）。
+    用 None 与 "" 区分"无标题参数"与"显式要目录"，避免空串被当作假值跳过。"""
     if "#" in path:
         file_part, heading = path.rsplit("#", 1)
         return file_part, heading
@@ -60,10 +102,11 @@ def _split_path_heading(path: str) -> tuple[str, str | None]:
 
 
 def _extract_section(text: str, heading: str) -> str | None:
-    """Return the block from the matching heading to the next same-or-higher
-    level heading. Exact `## name` match first, then a case-insensitive
-    contains-match (for fuzzy model names). Empty heading returns the TOC of all
-    level-1/2 headings. Returns None when the heading is not found."""
+    """返回从匹配标题到下一个同级/更高级标题之间的段落。
+
+    先精确匹配 `## name`；找不到再大小写不敏感的包含匹配（处理模糊型号名）。
+    空标题返回所有 1/2 级标题的目录 TOC。找不到标题返回 None。
+    作用：让 read 只需把某系列/某模块的段落取进上下文，避免整份大参考文件占满上下文。"""
     lines = text.splitlines()
     if not heading:
         toc = [ln.strip() for ln in lines if re.match(r"^#{1,2}\s", ln.strip())]
@@ -135,9 +178,10 @@ class ReadTool:
         )
 
     def _resolve_read_path(self, rel: str) -> Path:
-        """Resolve a read path: either a workspace-relative path or an
-        `@skill/<name>/<sub>/<file>` path confined to that skill's directory
-        (references/, assets/, ... — read-only package content)."""
+        """解析读路径：要么是工作区相对路径，要么是 `@skill/<name>/<子目录>/<file>`。
+
+        `@skill/` 形式把路径限定在对应 skill 目录内（references/、assets/ 等——只读的
+        包内容），同样做 resolve + is_relative_to 越界校验，防止读到 skill 目录之外。"""
         if rel.startswith("@skill/"):
             parts = rel[len("@skill/"):].split("/")
             if len(parts) < 2:
@@ -302,16 +346,17 @@ class BashTool:
         self._workspace = Path(workspace_dir)
 
     async def handle(self, ctx: SkillContext, *, command: str) -> str:
-        _audit(ctx, "tool.bash", command=command)
+        _audit(ctx, "tool.bash", command=command)  # 先审计再执行，确保每条命令留痕
         self._workspace.mkdir(parents=True, exist_ok=True)
-        # UTF-16LE base64: immune to quoting / code-page mangling on Windows
+        # 用 UTF-16LE base64 编码命令：规避 Windows 上引号转义与中文代码页乱码
         encoded = base64.b64encode(command.encode("utf-16le")).decode("ascii")
         cmd = ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded]
         try:
+            # 子进程放线程池执行，避免阻塞事件循环；stdout+stderr 合并返回给 LLM
             result = await asyncio.to_thread(
                 subprocess.run,
                 cmd,
-                cwd=str(self._workspace),
+                cwd=str(self._workspace),  # cwd 锁在工作区，但绝对路径仍可越界（风险已接受，靠审计兜底）
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 timeout=BASH_TIMEOUT_S,

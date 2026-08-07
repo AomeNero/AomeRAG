@@ -1,4 +1,4 @@
-"""Document converter: .docx → Pandoc, others → MarkItDown, .md → direct read."""
+"""文档转换：.docx 用 Pandoc，其它用 MarkItDown，.md 直读。"""
 
 from __future__ import annotations
 
@@ -23,13 +23,13 @@ class UnsupportedDoc(Exception):
 
 
 class Converter:
-    """Routes by extension: .docx→pandoc (with --extract-media), others→markitdown, .md→direct."""
+    """按扩展名路由：.docx→pandoc（带 --extract-media），其它→markitdown，.md→直读。"""
 
     def __init__(self) -> None:
         self._md = MarkItDown()
 
     def convert(self, src: Path) -> tuple[str, Path | None]:
-        """Returns (markdown_text, media_dir | None). media_dir holds pandoc-extracted images."""
+        """返回 (markdown_text, media_dir | None)。media_dir 保存 pandoc 抽出的图片。"""
         ext = src.suffix.lower()
         if ext in DIRECT_EXTS:
             return src.read_text(encoding="utf-8", errors="replace"), None
@@ -40,7 +40,7 @@ class Converter:
         raise UnsupportedDoc(str(src))
 
     def _pandoc_docx(self, src: Path) -> tuple[str, Path | None]:
-        """Convert .docx via pandoc with media extraction. Falls back to markitdown on error."""
+        """用 pandoc 转 .docx（含媒体抽取）；出错时回退到 markitdown。"""
         media_dir = Path(tempfile.mkdtemp(prefix="pandoc_media_"))
         out_md = media_dir / "_output.md"
         try:

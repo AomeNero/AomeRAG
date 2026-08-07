@@ -1,4 +1,4 @@
-"""clarify skill — ask the user a clarifying question and end the turn (no second LLM call)."""
+"""clarify 技能——向用户追问澄清问题（EndTurn 停轮）。"""
 
 from __future__ import annotations
 

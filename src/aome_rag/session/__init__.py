@@ -1,1 +1,1 @@
-"""Multi-user conversation history (SQLite, WAL)."""
+"""多用户会话历史（SQLite WAL）。"""

@@ -1,9 +1,4 @@
-"""Command-line entry point: `uv run aomerag`.
-
-Runs the AomeRAG backend under uvicorn. Workers is LOCKED to 1: Zvec writes are
-single-process exclusive, so multiple worker processes would corrupt the vector store.
-(If you ever need >1 process, switch to a server-mode vector DB or split read/write first.)
-"""
+"""命令行入口：`uv run aomerag`。用 uvicorn 启动后端，worker 锁死为 1（Zvec 写独占）。"""
 
 from __future__ import annotations
 

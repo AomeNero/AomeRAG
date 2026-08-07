@@ -1,4 +1,4 @@
-"""Health endpoints."""
+"""健康检查：/health、/readyz、/stats。"""
 
 from __future__ import annotations
 
@@ -11,13 +11,13 @@ router = APIRouter(tags=["health"])
 
 @router.get("/health")
 async def health() -> dict[str, str]:
-    """Liveness — always 200 if the process is up."""
+    """存活探针——进程在就跑 200。"""
     return {"status": "ok"}
 
 
 @router.get("/readyz")
 async def readyz(state=Depends(get_state)) -> dict[str, str]:
-    """Readiness — reports whether wired dependencies are present."""
+    """就绪探针——报告依赖是否装配齐。"""
     settings = state.settings
     return {
         "db": "ok" if getattr(state, "session_store", None) is not None else "down",
@@ -30,7 +30,7 @@ async def readyz(state=Depends(get_state)) -> dict[str, str]:
 
 @router.get("/stats")
 async def stats(state=Depends(get_state)) -> dict[str, object]:
-    """System info for the UI: KB size + model/config."""
+    """给界面用的系统信息：知识库规模 + 模型/配置。"""
     settings = state.settings
     try:
         n_chunks: int = state.store.chunk_count()

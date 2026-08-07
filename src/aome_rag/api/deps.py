@@ -1,4 +1,4 @@
-"""FastAPI dependencies."""
+"""FastAPI 依赖：从 app.state 取共享服务。"""
 
 from __future__ import annotations
 

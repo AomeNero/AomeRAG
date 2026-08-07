@@ -1,4 +1,4 @@
-"""Shared async HTTP client with retry/backoff on 429/5xx."""
+"""共享异步 HTTP 客户端：429/5xx 自动重试退避。"""
 
 from __future__ import annotations
 
@@ -12,10 +12,10 @@ from .errors import ProviderError, RateLimitError
 
 
 class HttpRetryClient:
-    """Thin wrapper over httpx.AsyncClient adding bounded retry on 429/5xx.
+    """httpx.AsyncClient 的薄封装，对 429/5xx 做有上限的重试。
 
-    `transport` is injectable for tests (httpx.MockTransport). Set `backoff_initial=0.0`
-    in tests to skip real sleeps.
+    `transport` 可注入以便测试（httpx.MockTransport）。测试里设 `backoff_initial=0.0`
+    跳过真实等待。
     """
 
     def __init__(
@@ -66,8 +66,8 @@ class HttpRetryClient:
         raise ProviderError("retries exhausted")  # unreachable
 
     async def post_stream(self, path: str, payload: dict) -> AsyncIterator[str]:
-        """Yield raw response lines from a streaming POST. Retries only before the stream
-        starts (once bytes are flowing there is no resumption)."""
+        """从流式 POST 产出原始响应行。只在流开始前重试
+        （一旦有字节流动就无法续传）。"""
         url = self._base + path
         for attempt in range(self._max_retries + 1):
             req = self._client.build_request("POST", url, json=payload, headers=self._headers)

@@ -1,8 +1,4 @@
-"""Document parsing — routes by extension.
-
-Markdown files are read directly (they are already the target format, so markitdown would be
-a no-op pass-through). Office/web text formats go through markitdown. Anything else is
-unsupported and skipped by the caller."""
+"""文档解析——按扩展名路由。"""
 
 from __future__ import annotations
 
@@ -28,7 +24,7 @@ class Parser:
         self._md = MarkItDown()
 
     def parse(self, filename: str, data: bytes) -> str:
-        """Return Markdown text for the file, routing by extension."""
+        """按扩展名路由，返回文件的 Markdown 文本。"""
         ext = os.path.splitext(filename)[1].lower()
         if ext in DIRECT_EXTS:
             return data.decode("utf-8", errors="replace")

@@ -1,5 +1,4 @@
-"""SQLite connection factory. WAL mode + busy_timeout for single-writer concurrency;
-schema mirrors migrations/001_init_sessions.sql."""
+"""SQLite 连接工厂：WAL 模式 + busy_timeout。"""
 
 from __future__ import annotations
 
@@ -86,9 +85,9 @@ async def open_db(path: str) -> aiosqlite.Connection:
 
 
 async def _migrate_state_columns(db: aiosqlite.Connection) -> None:
-    """Normalize legacy state-table timestamp columns (`cleaned_at` / `ingested_at`) to
-    `updated_at`. `CREATE TABLE IF NOT EXISTS` does NOT alter existing tables, so a table
-    created before the rename keeps the old column and every write fails otherwise."""
+    """把旧版状态表的时间戳列（`cleaned_at` / `ingested_at`）规范成
+    `updated_at`。`CREATE TABLE IF NOT EXISTS` 不会改已有表，所以改名前的表
+    保留旧列，否则每次写入都会失败。"""
     for table in ("clean_state", "ingest_state"):
         cur = await db.execute(f"PRAGMA table_info({table})")
         cols = {r["name"] for r in await cur.fetchall()}
@@ -103,10 +102,10 @@ async def _migrate_state_columns(db: aiosqlite.Connection) -> None:
 async def write_with_retry(
     db: aiosqlite.Connection, fn, retries: int = 3, delay: float = 1.0
 ) -> None:
-    """Run a DB write (`fn` executes statements + commits) robustly:
-    rolls back on ANY error so a failed write can never leak an open transaction
-    (which would hold the write lock and break every later write), and retries a
-    few times on transient `database is locked`."""
+    """稳健地执行一次数据库写入（`fn` 执行语句并提交）：
+    任何出错都回滚，失败的写绝不会泄漏未关闭的事务
+    （否则会占用写锁、让后续写入全部失败），并对瞬时的
+    `database is locked` 重试几次。"""
     for attempt in range(retries):
         try:
             await fn()

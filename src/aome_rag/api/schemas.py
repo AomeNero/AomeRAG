@@ -1,4 +1,4 @@
-"""HTTP request/response shapes."""
+"""HTTP 请求/响应数据模型。"""
 
 from __future__ import annotations
 

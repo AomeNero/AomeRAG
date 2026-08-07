@@ -1,7 +1,4 @@
-"""Cleaning pipeline: full-regenerate raw-data → md-data (front-matter + images).
-
-Async generator yielding SSE progress events (scan / file_start / file_done / skipped / summary).
-Each run clears md-data (including images/) and rebuilds from raw-data."""
+"""清洗管线：全量重生成 raw-data → md-data（front-matter + 图片），SSE 进度。"""
 
 from __future__ import annotations
 
@@ -47,7 +44,7 @@ class CleaningPipeline:
         images_dir = md / "images"
         t0 = time.monotonic()
 
-        # --- scan ---
+        # --- 扫描 ---
         files: list[tuple[str, Path]] = []
         skipped: list[str] = []
         if raw.is_dir():
@@ -71,7 +68,7 @@ class CleaningPipeline:
         for s in skipped:
             yield {"type": "skipped", "source_doc": s, "reason": "unsupported extension"}
 
-        # --- full regenerate: clear md-data, but NEVER delete the images/ pool ---
+        # --- 全量重生成：清空 md-data，但绝不删除 images/ 池 ---
         if md.is_dir():
             for item in md.iterdir():
                 if item.name == "images":
@@ -83,7 +80,7 @@ class CleaningPipeline:
         md.mkdir(parents=True, exist_ok=True)
         images_dir.mkdir(parents=True, exist_ok=True)
 
-        # --- process each file ---
+        # --- 逐个处理文件 ---
         n_ok = 0
         n_failed = 0
         errors: list[str] = []
@@ -94,7 +91,7 @@ class CleaningPipeline:
                 text, media_dir = await loop.run_in_executor(
                     self._executor, self._converter.convert, path
                 )
-                # Mirror raw-data's subdirectory structure: raw/sub/file.docx → md/sub/file.md
+                # 镜像 raw-data 的子目录结构：raw/sub/file.docx → md/sub/file.md
                 out_path = md / Path(rel).with_suffix(".md")
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 text = await loop.run_in_executor(
@@ -133,12 +130,11 @@ class CleaningPipeline:
     async def incremental_update(
         self, raw_data_dir: str, md_data_dir: str
     ) -> AsyncIterator[dict]:
-        """Incremental clean: only convert NEW/MODIFIED raw files (content-hash vs clean_state),
-        delete the md output of REMOVED files, and persist the new state.
+        """增量清洗：只转换新增/变更的 raw 文件（内容哈希对比 clean_state），
+        删除已移除文件的 md 输出，并持久化新状态。
 
-        Yields `deleted` events for removed docs and `file_done`/`file_start` for the
-        converted ones — all using the RAW relative path; callers derive the md source_doc
-        via `Path(rel).with_suffix(".md")`."""
+        为移除的文档产出 `deleted` 事件，为转换的产出 `file_done`/`file_start`——
+        都用 raw 相对路径；调用方用 `Path(rel).with_suffix(".md")` 推导 md source_doc。"""
         loop = asyncio.get_running_loop()
         raw = Path(raw_data_dir)
         md = Path(md_data_dir)
@@ -155,7 +151,7 @@ class CleaningPipeline:
         n_failed = 0
         errors: list[str] = []
 
-        # --- scan raw files ---
+        # --- 扫描 raw 文件 ---
         files: list[tuple[str, Path]] = []
         skipped: list[str] = []
         if raw.is_dir():
@@ -180,7 +176,7 @@ class CleaningPipeline:
         for s in skipped:
             yield {"type": "skipped", "source_doc": s, "reason": "unsupported extension"}
 
-        # --- removed files: drop from state + delete their md output ---
+        # --- 已删除文件：从状态移除并删除其 md 输出 ---
         for rel in prev:
             if rel not in scanned:
                 md_file = md / Path(rel).with_suffix(".md")
@@ -190,7 +186,7 @@ class CleaningPipeline:
 
         images_dir.mkdir(parents=True, exist_ok=True)
 
-        # --- process only new/modified files ---
+        # --- 只处理新增/变更文件 ---
         for rel, path in files:
             try:
                 data = await loop.run_in_executor(self._executor, _read_bytes, str(path))
@@ -229,7 +225,7 @@ class CleaningPipeline:
                 errors.append(f"{rel}: {e}")
                 yield {"type": "file_done", "source_doc": rel, "status": "error", "error": str(e)}
 
-        # --- persist new state (only successfully handled + still-present files) ---
+        # --- 持久化新状态（仅成功处理且仍存在的文件）---
         if self._clean_state is not None:
             await self._clean_state.save_all(new_state)
 

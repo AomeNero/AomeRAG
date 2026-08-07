@@ -1,13 +1,11 @@
-"""Structured logging via structlog, with best-effort secret redaction.
+"""基于 structlog 的结构化日志，含尽力而为的敏感字段脱敏。
 
-Logs are written to the console (as before) AND, when enabled, to files split
-by top-level module under ``<log_dir>/app/`` plus uvicorn's request logs under
-``<log_dir>/access/``. Each file rotates daily and keeps ``retention_days``
-backups. Every toggle defaults to on; ``log_dir=None`` keeps the old
-console-only behaviour.
+日志同时写控制台（保持原行为）与文件；开启时按顶层模块分包到 ``<log_dir>/app/``，
+uvicorn 的每个请求日志写到 ``<log_dir>/access/``。每个文件按天轮转并保留
+``retention_days`` 份。各开关默认全开；``log_dir=None`` 时保持旧的控制台-only 行为。
 
-Naming (TimedRotatingFileHandler with a custom namer): the live file is
-``<name>.log``; after midnight it is rotated to ``<name>-YYYY-MM-DD.log``.
+命名（TimedRotatingFileHandler + 自定义 namer）：实时文件是 ``<name>.log``，
+过午夜轮转成 ``<name>-YYYY-MM-DD.log``。
 """
 
 from __future__ import annotations
@@ -19,11 +17,11 @@ from pathlib import Path
 
 import structlog
 
-# Substrings that mark a log key as sensitive → value is replaced with "***".
+# 含这些子串的日志键视为敏感 → 值替换为 "***"
 _SENSITIVE_HINTS = ("key", "token", "secret", "authorization", "password", "cookie")
 
-# Top-level packages under aome_rag that get their own file in logs/app/.
-# Anything else under aome_rag lands in logs/app/other.log.
+# aome_rag 下各自独占 logs/app/ 一个文件的顶层包
+# aome_rag 下其它日志落入 logs/app/other.log
 APP_MODULES = (
     "api",
     "agent",
@@ -35,8 +33,8 @@ APP_MODULES = (
     "providers",
 )
 
-# loggers whose handlers we installed (logger name -> [handlers]) so a second
-# configure_logging() call (or a test) can detach them cleanly.
+# 我们安装了 handler 的日志器（logger 名 -> [handlers]），以便再次调用
+# configure_logging()（或测试）能干净地摘除。
 _MANAGED: dict[str, list[logging.Handler]] = {}
 
 
@@ -70,17 +68,17 @@ def _daily_file_handler(
 
 
 def _dated_namer(default_name: str) -> str:
-    """'api.log.2026-08-06' → 'api-2026-08-06.log'."""
+    """轮转文件命名：'api.log.2026-08-06' → 'api-2026-08-06.log'（日期进文件名）。"""
     stem, suffix = default_name.rsplit(".", 1)
     base, ext = os.path.splitext(stem)
     return f"{base}-{suffix}{ext}"
 
 
 class _ExcludeModulesFilter(logging.Filter):
-    """Reject records whose logger is one of the module-specific loggers.
+    """过滤掉已有独立文件的模块日志器。
 
-    Lets logs/app/other.log catch only aome_rag loggers that don't have their
-    own file (so the module files and other.log never both write the same line).
+    作用：让 logs/app/other.log 只收纳没有独立文件的 aome_rag.* 日志器
+    （如 aome_rag.services），保证模块文件与 other.log 不会同一行重复写两份。
     """
 
     def __init__(self, modules: tuple[str, ...]) -> None:
@@ -92,7 +90,7 @@ class _ExcludeModulesFilter(logging.Filter):
 
 
 def _structlog_chain() -> list:
-    """Processors applied to structlog events before rendering."""
+    """structlog 事件在渲染前经过的处理器链（合并上下文 → 级别 → 时间戳 → 脱敏 → 异常信息）。"""
     return [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
@@ -114,7 +112,7 @@ _FOREIGN_PRE_CHAIN = [
 
 
 def _readable_formatter() -> structlog.stdlib.ProcessorFormatter:
-    """Plain-text rendering shared by console and files (same look as before)."""
+    """控制台与文件共用的纯文本渲染（保持与之前一致的可读格式）。"""
     return structlog.stdlib.ProcessorFormatter(
         foreign_pre_chain=_FOREIGN_PRE_CHAIN,
         processors=[
@@ -143,7 +141,7 @@ def _setup_app_files(
         logger.addHandler(handler)
         _MANAGED.setdefault(logger.name, []).append(handler)
 
-    # Catch-all for any other aome_rag.* logger (e.g. aome_rag.services).
+    # 兜底：其它未分包的 aome_rag.* 日志器（如 aome_rag.services）
     fallback = logging.getLogger("aome_rag")
     fallback.setLevel(level)
     handler = _daily_file_handler(app_dir / "other.log", formatter, retention_days)
@@ -156,8 +154,10 @@ def _setup_uvicorn_loggers(
     app_dir: Path, access_dir: Path, level: int,
     retention_days: int, app_to_file: bool, access_to_file: bool,
 ) -> None:
-    """Route uvicorn's own loggers to console (+ files). Replaces uvicorn's
-    default stderr handlers so startup/access lines appear once."""
+    """把 uvicorn 自身的日志器改接到控制台（+ 文件）。
+
+    替换 uvicorn 默认的 stderr handler，让启动/访问日志只出现一次；
+    uvicorn.error 承载生命周期/错误，uvicorn.access 承载每个请求。"""
 
     from uvicorn.logging import AccessFormatter, DefaultFormatter
 
@@ -193,7 +193,7 @@ def _setup_uvicorn_loggers(
             retention_days,
         )
 
-    # uvicorn + uvicorn.error → lifecycle/startup/errors
+    # uvicorn + uvicorn.error → 生命周期/启动/错误
     for name in ("uvicorn", "uvicorn.error"):
         logger = logging.getLogger(name)
         logger.handlers = []
@@ -204,7 +204,7 @@ def _setup_uvicorn_loggers(
             logger.addHandler(error_file)
         _MANAGED[name] = logger.handlers
 
-    # uvicorn.access → per-request lines
+    # uvicorn.access → 每个请求一行
     logger = logging.getLogger("uvicorn.access")
     logger.handlers = []
     logger.setLevel(level)
@@ -224,10 +224,9 @@ def configure_logging(
     log_access_to_file: bool = True,
     retention_days: int = 30,
 ) -> None:
-    """Configure structlog + file logging. Safe to call more than once.
+    """配置 structlog + 文件日志。可重复调用。
 
-    With ``log_dir=None`` (or ``log_to_file=False``) behaviour is the old
-    console-only one.
+    ``log_dir=None``（或 ``log_to_file=False``）时为旧的控制台-only 行为。
     """
     _detach_managed()
     numeric_level = getattr(logging, level.upper(), logging.INFO)
@@ -244,7 +243,7 @@ def configure_logging(
 
     write_files = log_dir is not None and log_to_file
     if not write_files:
-        # keep uvicorn's own default stderr output when not writing files
+        # 不写文件时保留 uvicorn 自身的默认 stderr 输出
         return
 
     root = Path(log_dir)

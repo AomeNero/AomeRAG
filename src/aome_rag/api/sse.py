@@ -1,4 +1,4 @@
-"""SSE event encoding."""
+"""SSE 事件编码。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Skill registry: manual registration, dispatch, and directory auto-discovery (s07)."""
+"""技能注册表：手动注册、按名派发、目录自动发现。"""
 
 from __future__ import annotations
 
@@ -22,16 +22,16 @@ class SkillNotFound(KeyError):
 
 
 def _is_skill_class(obj: Any) -> bool:
-    """Duck-type check: a concrete class with a string `name`, plus `description`,
-    `tool_schema`, and a `handle` coroutine. Excludes the Protocol itself."""
+    """鸭子类型判断：一个具体类需有字符串 `name`、`description`、`tool_schema` 和
+    `handle` 协程才算技能；排除 Protocol 本身。"""
     if not inspect.isclass(obj):
         return False
     name = getattr(obj, "name", None)
     if not isinstance(name, str) or not name:
         return False
     if obj.__module__.startswith("aome_rag.skills"):
-        # skip the base protocol/abc living in this package; real skills set a concrete name
-        # but still pass the checks above only if they define one — allow subclasses here.
+        # 跳过本包内的基础协议/抽象类；真实技能会设置具体 name，
+        # 只要定义了 name 就通过上面的判断——这里允许子类。
         pass
     return all(hasattr(obj, attr) for attr in ("description", "tool_schema", "handle"))
 
@@ -58,9 +58,9 @@ class SkillRegistry:
         return [s.system_prompt_fragment for s in self._skills.values() if s.system_prompt_fragment]
 
     def discover(self, skills_dir: str | Path) -> None:
-        """Auto-discover skill classes from .py files in `skills_dir` (s07 registry shape).
-        Each skill class is instantiated with no args. Import errors are logged and skipped;
-        duplicate names are skipped."""
+        """从 `skills_dir` 的 .py 文件自动发现技能类（s07 注册表形态）。
+
+        每个技能类用无参构造实例化；导入出错会记日志并跳过，重名技能跳过。"""
         path = Path(skills_dir)
         if not path.is_dir():
             return

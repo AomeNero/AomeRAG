@@ -1,4 +1,4 @@
-"""kb_search skill — hybrid retrieval over the knowledge base (Retriever wired via services)."""
+"""kb_search 技能——混合检索知识库（经 services.retriever）。"""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ class KbSearchSkill:
         hits = await retriever.search(query, top_k=top_k)
         if not hits:
             return "No relevant documents found for that query."
-        # structured hits for the UI (the model still reads the formatted string below)
+        # 给 UI 的结构化命中（模型仍读下面的格式化字符串）
         ctx.details = [
             {
                 "source_doc": h.source_doc,

@@ -1,4 +1,4 @@
-"""Session row models."""
+"""会话行模型。"""
 
 from __future__ import annotations
 

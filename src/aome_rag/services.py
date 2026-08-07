@@ -1,8 +1,4 @@
-"""Shared service bag injected into skills via SkillContext.services.
-
-Keeps skills decoupled from concrete implementations (the loop/app wire the real ones;
-tests inject fakes). Grows phase by phase.
-"""
+"""共享服务包：通过 SkillContext.services 注入给技能（retriever / session_store / ingestion）。"""
 
 from __future__ import annotations
 

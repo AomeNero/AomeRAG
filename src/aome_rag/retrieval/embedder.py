@@ -1,4 +1,4 @@
-"""Ollama embedder — bge-m3 dense vectors via /api/embed (1024-d). Async HTTP, sem-bounded."""
+"""Ollama 嵌入：bge-m3 dense 向量，async HTTP，信号量限并发。"""
 
 from __future__ import annotations
 

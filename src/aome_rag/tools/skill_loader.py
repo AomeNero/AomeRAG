@@ -1,8 +1,4 @@
-"""s07 on-demand skill loader.
-
-Scans src/aome_rag/skills/ for markdown skill files (directory-style with SKILL.md,
-or standalone .md). Lists them in the system prompt; the model calls load_skill(name)
-to inject a skill's full content into context."""
+"""按需技能加载器：扫描包内 skills/ 的 .md 技能文件，命中后把全文注入上下文。"""
 
 from __future__ import annotations
 
@@ -14,21 +10,20 @@ from aome_rag.tools.base import SkillContext
 
 
 class SkillLoaderSkill:
-    """Provides the load_skill tool. Scans skills/ each turn (live — new .md files
-    are picked up without restart)."""
+    """load_skill 工具。每轮实时扫描 skills/（新增 .md 文件无需重启即生效）。"""
 
     name = "load_skill"
     SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills"
 
     def _scan(self) -> list[dict[str, Any]]:
-        """Scan skills/ for .md skill files. Supports:
-        - Directory skills: skills/<name>/SKILL.md (name = dir name)
-        - Standalone: skills/<name>.md (name = filename stem)
-        Returns [{name, desc, path}]."""
+        """扫描 skills/ 下的 .md 技能文件，支持：
+        - 目录式：skills/<name>/SKILL.md（name = 目录名）
+        - 独立式：skills/<name>.md（name = 文件名）
+        返回 [{name, desc, path}]。desc 取自 frontmatter 的 description（见 _extract_desc）。"""
         result: list[dict[str, Any]] = []
         if not self.SKILLS_DIR.is_dir():
             return result
-        # directory skills: <name>/SKILL.md
+        # 目录式技能：<name>/SKILL.md
         for d in sorted(self.SKILLS_DIR.iterdir()):
             if d.is_dir():
                 skill_md = d / "SKILL.md"
@@ -36,7 +31,7 @@ class SkillLoaderSkill:
                     result.append(
                         {"name": d.name, "desc": self._extract_desc(skill_md), "path": skill_md}
                     )
-        # standalone top-level .md
+        # 独立顶层 .md
         for md in sorted(self.SKILLS_DIR.glob("*.md")):
             result.append(
                 {"name": md.stem, "desc": self._extract_desc(md), "path": md}
@@ -45,8 +40,10 @@ class SkillLoaderSkill:
 
     @staticmethod
     def _extract_desc(path: Path) -> str:
-        """YAML frontmatter `description:` field (the trigger guidance), falling back
-        to the first '# heading', then the filename stem."""
+        """提取 YAML frontmatter 的 `description:` 字段（即触发条件，供 agent 判断是否命中）。
+
+        这是"描述路由"的关键：目录里展示的是一段能说明何时该用本技能的触发描述，
+        而不是笼统的标题。无 frontmatter 时回退到首个 '# 标题'，再退到文件名。"""
         try:
             text = Path(path).read_text(encoding="utf-8", errors="replace")
         except OSError:

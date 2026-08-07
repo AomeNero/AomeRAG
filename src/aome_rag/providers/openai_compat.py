@@ -1,9 +1,4 @@
-"""OpenAI-compatible adapter (DeepSeek / GLM / Qwen / Kimi).
-
-Owns the wire-format <-> internal-model translation, including the defect-dense tool-call
-normalization. The pure functions below are tested with recorded fixtures; the HTTP path is
-exercised in the live integration tests.
-"""
+"""OpenAI 兼容适配器（DeepSeek / GLM / Qwen / Kimi）。"""
 
 from __future__ import annotations
 
@@ -24,9 +19,10 @@ _log = structlog.get_logger()
 
 
 def parse_tool_arguments(raw: str) -> dict[str, Any]:
-    """Parse a tool-call `arguments` JSON string. Raises ToolCallParseError on bad JSON or
-    non-object payloads. The caller (agent loop) catches this and synthesizes an
-    `is_error=True` tool result so the model self-corrects (s11)."""
+    """解析工具调用的 `arguments` JSON 字符串。
+
+    JSON 非法或不是对象时抛 ToolCallParseError。调用方（agent 循环）捕获后合成
+    `is_error=True` 的工具结果，让模型据此自我修正。"""
     try:
         obj = json.loads(raw or "{}")
     except json.JSONDecodeError as e:  # pragma: no cover - exercised via tests
@@ -37,7 +33,7 @@ def parse_tool_arguments(raw: str) -> dict[str, Any]:
 
 
 def messages_to_openai(messages: list[Message]) -> list[dict[str, Any]]:
-    """Internal messages -> OpenAI chat-completions wire messages."""
+    """内部消息 → OpenAI chat-completions 线上格式。"""
     out: list[dict[str, Any]] = []
     for m in messages:
         if m.role in ("system", "user"):
@@ -62,17 +58,17 @@ def messages_to_openai(messages: list[Message]) -> list[dict[str, Any]]:
             if tool_calls:
                 entry["tool_calls"] = tool_calls
             out.append(entry)
-            # An assistant message may also carry embedded tool results (clarify persists
-            # its result inside the assistant message). Emit them as trailing "tool" role
-            # messages so the wire format always pairs every tool_calls with a result —
-            # otherwise OpenAI-compatible APIs reject the conversation with 400.
+            # assistant 消息里可能内嵌工具结果（clarify 把结果持久化在 assistant 消息内）。
+            # 展开成紧随其后的 "tool" 角色消息，保证每个 tool_calls 都有配对结果——
+            # 否则 OpenAI 兼容 API 会因"有 tool_calls 无结果"拒绝整个对话（400），
+            # 导致 clarify 后 agent 拿到空回答。
             for b in m.blocks:
                 if isinstance(b, ToolResultBlock):
                     out.append(
                         {"role": "tool", "tool_call_id": b.tool_use_id, "content": b.content}
                     )
         elif m.role == "tool":
-            # One internal tool-message may carry several results -> fan out to N role:"tool".
+            # 一条内部工具消息可能携带多个结果 → 展开成 N 条 role:"tool" 消息。
             for b in m.blocks:
                 if isinstance(b, ToolResultBlock):
                     out.append(
@@ -110,7 +106,7 @@ def _normalize_finish(reason: str | None) -> str:
 
 
 def response_to_llm_response(resp: dict[str, Any]) -> LLMResponse:
-    """OpenAI non-stream response -> internal LLMResponse."""
+    """OpenAI 非流式响应 → 内部 LLMResponse。"""
     choice = resp["choices"][0]
     return LLMResponse(
         message=_choice_to_message(choice),
@@ -120,8 +116,8 @@ def response_to_llm_response(resp: dict[str, Any]) -> LLMResponse:
 
 
 def parse_stream_chunk(obj: dict[str, Any]) -> list[LLMDelta]:
-    """One parsed SSE JSON object -> deltas. Does NOT accumulate tool args; the caller
-    accumulates ToolCallDeltas by index and builds ToolUseBlocks at Finish."""
+    """解析单个 SSE JSON 对象 → deltas。不累积工具参数；调用方按索引累积
+    ToolCallDelta，在 Finish 时构建 ToolUseBlock。"""
     choices = obj.get("choices") or []
     if not choices:
         return []
@@ -148,7 +144,7 @@ def parse_stream_chunk(obj: dict[str, Any]) -> list[LLMDelta]:
 
 
 class OpenAICompatProvider:
-    """LLMProvider impl over an OpenAI-compatible chat-completions endpoint."""
+    """基于 OpenAI 兼容 chat-completions 端点的 LLMProvider 实现。"""
 
     name = "openai-compat"
 

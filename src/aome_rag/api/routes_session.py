@@ -1,4 +1,4 @@
-"""Session management endpoints (scoped to the authenticated user)."""
+"""会话管理接口（限定当前用户）：列表 / 消息 / 删除 / 标题。"""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ async def search_sessions(
     user: User = Depends(get_current_user),
     state=Depends(get_state),
 ) -> list[dict]:
-    """Keyword-search across the user's session messages + titles."""
+    """在用户的会话消息 + 标题里做关键词搜索。"""
     return await state.session_store.search_messages(user.id, q)
 
 
@@ -53,10 +53,10 @@ async def get_messages(
 
 
 def _messages_to_dicts(msgs: list[Message]) -> list[dict]:
-    """Convert messages to API shape. Reconstructs toolEvents by pairing
-    assistant tool_use blocks with the following tool message's tool_result blocks."""
+    """转成 API 形态的消息。把 assistant 的 tool_use 块与紧随其后的 tool 消息
+    tool_result 块配对，重建出 toolEvents。"""
     result: list[dict] = []
-    # Build a lookup: tool_use_id → ToolResultBlock
+    # 建立 tool_use_id → ToolResultBlock 的查找表
     result_blocks: dict[str, Any] = {}
     for m in msgs:
         for b in m.tool_results():
@@ -93,7 +93,7 @@ async def delete_session(
 async def generate_title(
     session_id: str, user: User = Depends(get_current_user), state=Depends(get_state)
 ) -> dict:
-    """Ask the LLM to summarize the session into a short (≤15 char) title."""
+    """让 LLM 把会话总结成简短（≤15 字）标题。"""
     msgs = await state.session_store.get_messages(session_id, user.id)
     if not msgs:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="empty session")
@@ -129,7 +129,7 @@ async def update_session_title(
     user: User = Depends(get_current_user),
     state=Depends(get_state),
 ) -> dict:
-    """Manually rename a session."""
+    """手动重命名会话。"""
     title = body.title.strip()[:50]
     ok = await state.session_store.set_title(session_id, user.id, title)
     if not ok:

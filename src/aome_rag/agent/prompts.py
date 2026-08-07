@@ -1,12 +1,4 @@
-"""Base system prompt — loaded from the editable `prompt/system-prompt.md`.
-
-The .md lives at `src/aome_rag/prompt/system-prompt.md` so it can be hand-edited without
-touching code. It is re-read on every turn, so edits take effect on the next user message
-(no restart needed). If the file is missing or unreadable, we fall back to the built-in
-`BASE_SYSTEM_PROMPT` below so the app still boots.
-
-Only the BASE prompt lives in the file; per-skill fragments (kb_search / clarify) are still
-appended programmatically by `context.assemble_system_prompt` (s10 pattern)."""
+"""基础系统提示词——从外部 `prompt/system-prompt.md` 读取（可手编、每轮实时生效）。"""
 
 from __future__ import annotations
 
@@ -14,7 +6,7 @@ from pathlib import Path
 
 PROMPT_FILE = Path(__file__).resolve().parent.parent / "prompt" / "system-prompt.md"
 
-# Built-in fallback used only if the .md is missing or unreadable.
+# 内置兜底，仅当 .md 缺失或不可读时使用。
 BASE_SYSTEM_PROMPT = """你是 AomeRAG，基于公司私域知识库回答问题。严格按下面两步执行，绝不臆测：
 
 【第 1 步 · 先判断问题是否清晰到可以检索】
@@ -40,7 +32,7 @@ BASE_SYSTEM_PROMPT = """你是 AomeRAG，基于公司私域知识库回答问题
 
 
 def load_base_prompt() -> str:
-    """Read the editable base prompt .md; fall back to the built-in default on any error."""
+    """读取可编辑的基础提示词 .md；出错时回退到内置默认。"""
     try:
         return PROMPT_FILE.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):

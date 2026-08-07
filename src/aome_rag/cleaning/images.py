@@ -1,15 +1,4 @@
-"""Image post-processor: extract images from markdown, convert to PNG, rewrite links.
-
-Handles three image sources:
-  1. data: URIs (base64-inline images from MarkItDown)
-  2. http(s) URLs (remote images, downloaded via requests)
-  3. local files from Pandoc --extract-media (walked and converted)
-
-All raster formats are converted to PNG via Pillow; EMF/WMF (Pillow cannot read them) are
-rendered via PowerShell + System.Drawing (Windows built-in). Images are saved to images_dir
-with a content-hash name. A conversion/download failure keeps the original reference for
-remote URLs, but removes it for extracted local media (whose temp path no longer exists).
-"""
+"""图片后处理：从 markdown 提取图片 → Pillow 转 PNG → 存 images/ 目录。"""
 
 from __future__ import annotations
 
@@ -30,8 +19,8 @@ _EMF_EXTS = {".emf", ".wmf"}
 
 
 def _save_png_bytes(png_bytes: bytes, images_dir: Path) -> str:
-    """Save PNG bytes under a content-hash name `image_<sha1(png)[:16]>.png`;
-    reuses an existing file (same content → same name, no accumulation)."""
+    """按内容哈希名 `image_<sha1(png)[:16]>.png` 保存 PNG 字节；
+    内容相同则复用已有文件（同名，不累积）。"""
     name = f"image_{hashlib.sha1(png_bytes).hexdigest()[:16]}.png"
     path = images_dir / name
     if not path.exists():
@@ -40,7 +29,7 @@ def _save_png_bytes(png_bytes: bytes, images_dir: Path) -> str:
 
 
 def _save_png(data: bytes, images_dir: Path) -> str | None:
-    """Convert raster bytes to PNG via Pillow and save. Returns the filename or None."""
+    """用 Pillow 把位图字节转成 PNG 并保存。返回文件名或 None。"""
     try:
         img = Image.open(io.BytesIO(data))
         if img.mode in ("RGBA", "LA", "P"):
@@ -53,8 +42,8 @@ def _save_png(data: bytes, images_dir: Path) -> str | None:
 
 
 def _convert_emf(src: Path, images_dir: Path) -> str | None:
-    """Render an EMF/WMF file to PNG via PowerShell + System.Drawing (Windows built-in).
-    Returns the content-hash filename, or None on failure."""
+    """用 PowerShell + System.Drawing（Windows 内置）把 EMF/WMF 渲染成 PNG。
+    返回内容哈希文件名，失败返回 None。"""
     try:
         images_dir.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory() as td:
@@ -83,11 +72,11 @@ def process_images(
     media_dir: Path | None = None,
     md_dir: Path | None = None,
 ) -> str:
-    """Find images in markdown, convert to PNG, rewrite links to relative paths.
+    """在 markdown 中找图片，转成 PNG，把链接改写成相对路径。
 
-    Links are relative to the md file's directory (`md_dir`), so they resolve both when
-    opening the .md locally and from the chat page (root `/` → `/images/…`). Default
-    `md_dir` = images dir's parent (md-data root) → links read `images/<name>`.
+    链接相对 md 文件所在目录（`md_dir`），所以本地打开 .md 和聊天页
+    （根 `/` → `/images/…`）都能解析。默认 `md_dir` = 图片目录的父目录
+    （md-data 根）→ 链接形如 `images/<name>`。
     """
     images_dir.mkdir(parents=True, exist_ok=True)
     base = md_dir if md_dir is not None else images_dir.parent
@@ -96,7 +85,7 @@ def process_images(
     def _link(name: str | None) -> str | None:
         return f"{prefix}/{name}" if name else None
 
-    # 1. data URIs: ![alt](data:image/png;base64,XXXX)
+    # 1. data URI：![alt](data:image/png;base64,XXXX)
     def _repl_data(m: re.Match) -> str:
         alt, b64 = m.group(1), m.group(2)
         rel = _link(_save_png(base64.b64decode(b64), images_dir))
@@ -108,7 +97,7 @@ def process_images(
         markdown,
     )
 
-    # 2. http(s) URLs: ![alt](https://...)
+    # 2. http(s) 链接：![alt](https://...)
     def _repl_http(m: re.Match) -> str:
         alt, url = m.group(1), m.group(2)
         try:
@@ -123,7 +112,7 @@ def process_images(
         r"!\[([^\]]*)\]\((https?://[^)\s]+)\)", _repl_http, markdown
     )
 
-    # 3. local media files (from pandoc --extract-media)
+    # 3. 本地媒体文件（来自 pandoc --extract-media）
     if media_dir and media_dir.is_dir():
         for img_path in sorted(media_dir.rglob("*")):
             if not img_path.is_file() or img_path.suffix.lower() not in _IMAGE_EXTS:
@@ -138,17 +127,17 @@ def process_images(
                 if name:
                     rel = _link(name)
 
-                    # 3a. markdown syntax: ![alt](...image1.png) → ![alt](rel)
-                    # (drop any path prefix before the media filename)
+                    # 3a. markdown 语法：![alt](...image1.png) → ![alt](rel)
+                    # （去掉媒体文件名前的任意路径前缀）
                     markdown = re.sub(
                         rf'!\[([^\]]*)\]\([^)]*?{old}\)', rf'![\1]({rel})', markdown
                     )
 
-                    # 3b. HTML <img src="...image1.png" .../> — pandoc emits raw HTML for
-                    # sized images, sometimes as multi-line blockquotes (each attribute on
-                    # its own `> ` line); react-markdown (no rehype-raw) would escape raw
-                    # HTML, so convert to markdown image syntax (alt preserved, size dropped).
-                    # The tempered dot (?s) crosses newlines but stops at the next <img.
+                    # 3b. HTML <img src="...image1.png" .../> —— pandoc 对指定尺寸的图片
+                    # 输出原始 HTML，有时是多行引用块（每个属性独占一行 `> `）；
+                    # react-markdown（无 rehype-raw）会转义原始 HTML，所以转成
+                    # markdown 图片语法（保留 alt，去掉尺寸）。
+                    # (?s) 让点号跨行，但遇到下一个 <img 停止。
                     def _repl_html_img(m: re.Match) -> str:
                         am = re.search(r'alt="([^"]*)"', m.group(0))
                         alt = am.group(1) if am else img_path.stem
@@ -160,8 +149,8 @@ def process_images(
                         markdown,
                     )
                 else:
-                    # conversion failed — the original reference points at a pandoc temp path
-                    # that no longer exists after cleaning, so drop the broken reference.
+                    # 转换失败——原引用指向 pandoc 临时路径，清洗后已不存在，
+                    # 删除这个失效引用。
                     markdown = re.sub(rf"!\[[^\]]*\]\([^)]*?{old}\)", "", markdown)
                     markdown = re.sub(
                         rf'(?s)<img\b(?:(?!<img\b).)*?src="[^"]*{old}"(?:(?!<img\b).)*?/?>',

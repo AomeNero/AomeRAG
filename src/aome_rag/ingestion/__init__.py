@@ -1,1 +1,1 @@
-"""Ingestion: parse -> chunk -> embed -> upsert (separate write path, locked)."""
+"""入库：解析 → 切片 → 向量化 → upsert（独立写路径，加锁）。"""

@@ -1,9 +1,4 @@
-"""Zvec collection schema for KB chunks.
-
-Hybrid index: a dense HNSW (cosine) vector field for bge-m3 + an FTS-indexed text field for
-the keyword channel. (Ollama exposes bge-m3 dense only; sparse is NOT used — see plan §7.)
-Structured fields carry metadata; `department` is reserved for future ACL (unused in v1).
-"""
+"""Zvec 知识库 chunk 的集合 schema。"""
 
 from __future__ import annotations
 
@@ -12,7 +7,7 @@ import zvec
 DENSE_FIELD = "dense"
 TEXT_FIELD = "text"
 
-# Metadata field names (stored per chunk).
+# 元数据字段名（每个 chunk 存储）
 F_SOURCE_DOC = "source_doc"
 F_HEADING_PATH = "heading_path"
 F_PAGE = "page"

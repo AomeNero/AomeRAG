@@ -1,5 +1,4 @@
-"""POST /chat — SSE streaming (default) or JSON. Runs one agent turn, persists new
-messages to the session store (best-effort, in finally)."""
+"""POST /chat —— SSE 流式（默认）或 JSON。跑一轮 agent，把新消息持久化到会话。"""
 
 from __future__ import annotations
 
@@ -80,7 +79,7 @@ async def chat(
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    # non-streaming
+    # 非流式模式
     answer: list[str] = []
     tool_events: list[dict] = []
     clarify: str | None = None

@@ -1,4 +1,4 @@
-"""LLM provider Protocol + response/delta shapes."""
+"""LLM Provider 协议 + 响应/delta 数据结构。"""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ class LLMResponse(BaseModel):
     usage: TokenUsage | None = None
 
 
-# ---- streaming deltas (tool args arrive as JSON fragments and are accumulated by index) ----
+# ---- 流式 delta（工具参数按 JSON 片段到达，按索引累积） ----
 class TextDelta(BaseModel):
     type: Literal["text"] = "text"
     text: str

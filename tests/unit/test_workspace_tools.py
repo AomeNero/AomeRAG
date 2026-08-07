@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import time
 from pathlib import Path
 
 import pytest
@@ -17,6 +19,7 @@ from aome_rag.tools.workspace import (
     ReadTool,
     WriteTool,
     _resolve_workspace_path,
+    cleanup_workspace,
 )
 
 
@@ -160,6 +163,47 @@ def test_skill_loader_desc_fallback_to_heading(tmp_path: Path) -> None:
     p = tmp_path / "s.md"
     p.write_text("# 纯标题\n内容", encoding="utf-8")
     assert SkillLoaderSkill._extract_desc(p) == "纯标题"
+
+
+# ---------- workspace cleanup ----------
+
+def _set_mtime(p: Path, days_ago: float) -> None:
+    ts = time.time() - days_ago * 86400
+    os.utime(p, (ts, ts))
+
+
+def test_cleanup_removes_old_keeps_fresh(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    old_dir = ws / "Recipe_old"
+    old_dir.mkdir()
+    (old_dir / "a.lua").write_text("x", encoding="utf-8")
+    fresh = ws / "Recipe_fresh"
+    fresh.mkdir()
+    (fresh / "b.lua").write_text("y", encoding="utf-8")
+    _set_mtime(old_dir / "a.lua", 10)
+    _set_mtime(old_dir, 10)
+    _set_mtime(fresh / "b.lua", 0)
+    _set_mtime(fresh, 0)
+    removed = cleanup_workspace(ws, retention_days=7)
+    assert removed >= 2  # a.lua + emptied old_dir
+    assert not old_dir.exists()
+    assert fresh.exists() and (fresh / "b.lua").exists()
+
+
+def test_cleanup_disabled_when_zero(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    (ws / "old.txt").write_text("x", encoding="utf-8")
+    _set_mtime(ws / "old.txt", 30)
+    assert cleanup_workspace(ws, retention_days=0) == 0
+    assert (ws / "old.txt").exists()
+
+
+def test_cleanup_keeps_workspace_root(tmp_path: Path) -> None:
+    ws = make_ws(tmp_path)
+    (ws / "old.txt").write_text("x", encoding="utf-8")
+    _set_mtime(ws / "old.txt", 30)
+    cleanup_workspace(ws, retention_days=7)
+    assert ws.is_dir()  # root kept
 
 
 # ---------- write ----------

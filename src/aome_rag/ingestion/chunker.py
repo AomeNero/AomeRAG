@@ -1,5 +1,4 @@
-"""Structural-first chunker: split Markdown by headings, fall back to fixed-size + overlap
-for sections that exceed the limit. (~300-500 tokens approximated via a char window.)"""
+"""结构化优先切分器：按 Markdown 标题切分，定长兜底。"""
 
 from __future__ import annotations
 
@@ -37,7 +36,7 @@ class Chunker:
         ]
 
     def _sections(self, markdown: str) -> list[tuple[str, str]]:
-        """Yield (heading_path, body_text) by walking Markdown headings with a level stack."""
+        """用标题层级栈遍历 Markdown 标题，产出 (heading_path, body_text)。"""
         sections: list[tuple[str, str]] = []
         stack: list[tuple[int, str]] = []  # (level, title)
         buf: list[str] = []
@@ -66,7 +65,7 @@ class Chunker:
         return sections
 
     def _fixed_windows(self, text: str) -> list[str]:
-        """Greedy paragraph-accumulating windows with overlap; hard-splits any oversized result."""
+        """贪心按段落累积窗口（带重叠）；超出尺寸的结果强制硬切。"""
         paras = [p for p in re.split(r"\n\s*\n", text) if p.strip()]
         windows: list[str] = []
         cur = ""

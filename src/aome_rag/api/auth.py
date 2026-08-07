@@ -1,5 +1,4 @@
-"""v1 auth: trust an `X-User-Id` header set by a gateway, or resolve a bearer token via
-AUTH_TOKENS (entries like "userid:displayname"). No SSO/roles in v1."""
+"""v1 鉴权：信任 X-User-Id 请求头，或 AUTH_TOKENS 里的 bearer token。"""
 
 from __future__ import annotations
 
@@ -15,7 +14,7 @@ class User(BaseModel):
 
 
 def _token_map(settings: Settings) -> dict[str, tuple[str, str]]:
-    """Parse AUTH_TOKENS "userid:displayname,..." into {token: (id, name)} (token==userid)."""
+    """解析 AUTH_TOKENS "userid:displayname,..." 为 {token: (id, name)}（token==userid）。"""
     out: dict[str, tuple[str, str]] = {}
     for entry in (settings.auth_tokens.split(",") if settings.auth_tokens else []):
         entry = entry.strip()

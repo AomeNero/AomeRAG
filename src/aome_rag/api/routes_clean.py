@@ -1,4 +1,4 @@
-"""POST /clean/dir and /update/dir — clean raw-data → md-data (SSE progress)."""
+"""POST /clean/dir 与 /update/dir —— 清洗 raw-data → md-data（SSE 进度）。"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ router = APIRouter(tags=["clean"])
 async def clean_dir(
     user: User = Depends(get_current_user), state=Depends(get_state)
 ):
-    """Recursively clean raw-data → md-data. SSE: scan → per-file start/done/skipped → summary."""
+    """递归清洗 raw-data → md-data。SSE：scan → 每文件 start/done/skipped → summary。"""
     raw_dir = state.settings.raw_data_dir
     md_dir = state.settings.md_data_dir
 
@@ -38,8 +38,8 @@ async def clean_dir(
 async def update_dir(
     user: User = Depends(get_current_user), state=Depends(get_state)
 ):
-    """Incremental update: clean only NEW/MODIFIED raw files → md, re-ingest exactly those
-    changed docs, and remove chunks for REMOVED docs. SSE: clean events then ingest events."""
+    """增量更新：只清洗新增/变更的 raw 文件 → md，仅重新入库这些变更文档，
+    并为已删除的文档移除 chunk。SSE：先清洗事件再入库事件。"""
     raw_dir = state.settings.raw_data_dir
     md_dir = state.settings.md_data_dir
 
@@ -54,14 +54,14 @@ async def update_dir(
                 deleted_raw.append(ev["source_doc"])
             yield sse_event(ev)
 
-        # re-ingest only the changed documents (delete-then-insert per source_doc)
+        # 只重新入库变更的文档（按 source_doc 先删后插）
         changed_md = [Path(r).with_suffix(".md").as_posix() for r in changed_raw]
         if changed_md:
             files = [(doc, str(Path(md_dir) / doc)) for doc in changed_md]
             async for ev in state.ingestion.ingest_files(files):
                 yield sse_event(ev)
 
-        # drop vector chunks for removed documents
+        # 为已删除的文档移除向量块
         if deleted_raw:
             loop = asyncio.get_running_loop()
             for r in deleted_raw:

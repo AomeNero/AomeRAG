@@ -1,5 +1,4 @@
-"""SessionStore — per-user conversation history. Every read is scoped by user_id so
-isolation is enforced at the data layer (a user can never read another's session)."""
+"""SessionStore —— 按用户隔离的会话历史。每个读都按 user_id 限定。"""
 
 from __future__ import annotations
 
@@ -79,7 +78,7 @@ class SessionStore:
     async def get_messages_admin(
         self, session_id: str, limit: int = 100
     ) -> list[Message]:
-        """Admin: fetch messages for any session (no user scoping)."""
+        """管理端：获取任意会话的消息（不按用户限定）。"""
         rows = await self._fetchall(
             "SELECT content_json FROM messages "
             "WHERE session_id=? ORDER BY created_at LIMIT ?",
@@ -119,7 +118,7 @@ class SessionStore:
         _log.info("session.message", session_id=session_id, role=msg.role)
 
     async def list_all_sessions(self, limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
-        """Admin: list sessions across ALL users (not scoped)."""
+        """管理端：列出所有用户的会话（不按用户限定）。"""
         rows = await self._fetchall(
             "SELECT id, user_id, title, created_at, updated_at FROM sessions "
             "ORDER BY updated_at DESC LIMIT ? OFFSET ?",
@@ -137,7 +136,7 @@ class SessionStore:
         ]
 
     async def submit_feedback(self, data: dict[str, Any]) -> str:
-        """Insert a feedback record. Returns the feedback id."""
+        """插入一条反馈记录。返回反馈 id。"""
         fid = uuid.uuid4().hex
 
         async def _do() -> None:
@@ -164,7 +163,7 @@ class SessionStore:
         return fid
 
     async def list_all_feedback(self, limit: int = 200) -> list[dict[str, Any]]:
-        """Admin: list all feedback across users."""
+        """管理端：列出所有用户的反馈。"""
         rows = await self._fetchall(
             "SELECT id, type, session_id, user_id, message_id, rating, "
             "user_question, ai_answer, comment, created_at "
@@ -199,7 +198,7 @@ class SessionStore:
         return True
 
     async def set_title(self, session_id: str, user_id: str, title: str) -> bool:
-        """Set/rename a session's title. Returns False if not found / not owned."""
+        """设置/重命名会话标题。找不到或无权时返回 False。"""
         row = await self._fetchone(
             "SELECT user_id FROM sessions WHERE id=?", (session_id,)
         )
@@ -219,8 +218,8 @@ class SessionStore:
     async def search_messages(
         self, user_id: str, q: str, limit: int = 50
     ) -> list[dict[str, Any]]:
-        """Keyword search (SQL LIKE) over a user's message text + session titles.
-        Returns hits with a snippet around the first match."""
+        """在用户的消息文本 + 会话标题里做关键词搜索（SQL LIKE）。
+        返回命中，含首个匹配附近的片段。"""
         like = f"%{q}%"
         rows = await self._fetchall(
             "SELECT m.session_id, m.role, m.content_json, s.title "

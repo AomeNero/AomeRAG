@@ -1,4 +1,4 @@
-"""Runtime system-prompt assembly: base + per-skill fragments."""
+"""系统提示词装配：基础提示词 + 各技能提示片段，运行时拼装。"""
 
 from __future__ import annotations
 

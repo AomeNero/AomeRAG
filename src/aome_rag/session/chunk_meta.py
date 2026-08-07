@@ -1,12 +1,4 @@
-"""Side table tracking chunk metadata for the admin KB manager.
-
-zvec can't enumerate docs/chunks (only query/fetch/delete_by_filter/stats), so the
-「知识库管理」page is driven by this table. It mirrors what was actually ingested:
-the ingestion pipeline writes rows on ingest (delete-then-insert per source doc) and
-removes them on delete — keeping it in step with the zvec collection.
-
-All calls are async on the shared aiosqlite connection (WAL mode).
-"""
+"""chunk 元数据侧表：管理后台知识库详情用。"""
 
 from __future__ import annotations
 
@@ -20,8 +12,8 @@ class ChunkMetaStore:
         self._db = db
 
     async def replace_source(self, source_doc: str, chunks: list[dict]) -> None:
-        """Rewrite all meta rows for one source doc (mirrors ingest's delete-then-insert).
-        Each chunk dict needs: id, chunk_index, heading_path, text_preview, created_at."""
+        """重写某个源文档的所有元数据行（对应入库的先删后插）。
+        每个 chunk dict 需要：id, chunk_index, heading_path, text_preview, created_at。"""
         rows = [
             (
                 c["id"],
@@ -70,7 +62,7 @@ class ChunkMetaStore:
         return [dict(r) for r in await cur.fetchall()]
 
     async def source_counts(self) -> dict[str, int]:
-        """{source_doc: chunk_count} for every doc that currently has chunks recorded."""
+        """对每个当前有记录的文档返回 {source_doc: chunk_count}。"""
         cur = await self._db.execute(
             "SELECT source_doc, COUNT(*) AS n FROM chunk_meta GROUP BY source_doc"
         )

@@ -1,5 +1,4 @@
-"""Retriever: async hybrid search over Zvec. Embeds the query (async) then runs the zvec
-hybrid query in a threadpool."""
+"""检索器：异步混合检索。先嵌入查询（async），再在线程池跑 Zvec 混合查询。"""
 
 from __future__ import annotations
 
@@ -30,8 +29,8 @@ class Hit:
 
 @dataclass
 class SearchFilters:
-    # Reserved for future ACL (v1 shared KB — unused). zvec filter DSL is SQL-like, e.g.
-    # 'department = "eng"'; wiring lands with the ACL feature.
+    # 预留给未来的 ACL（v1 共享知识库——暂未使用）。zvec 过滤 DSL 类似 SQL，如
+    # 'department = "eng"'；接线随 ACL 功能一起落地。
     department: list[str] | None = None
     source_doc: list[str] | None = None
 

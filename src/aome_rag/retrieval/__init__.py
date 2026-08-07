@@ -1,1 +1,1 @@
-"""Hybrid retrieval over Zvec (dense bge-m3 + native FTS)."""
+"""Zvec 混合检索（dense bge-m3 + 原生 FTS）。"""

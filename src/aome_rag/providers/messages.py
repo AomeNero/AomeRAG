@@ -1,9 +1,4 @@
-"""Neutral internal message & content-block model.
-
-Mirrors the Anthropic-style block model that learn-claude-code's loop emits. The OpenAI
-adapter (`openai_compat.py`) is the only place that knows OpenAI's flat `tool_calls` +
-`role:"tool"` wire shape.
-"""
+"""中立内部消息 & 内容块模型（与具体 Provider 解耦）。"""
 
 from __future__ import annotations
 
@@ -30,7 +25,7 @@ class ToolResultBlock(BaseModel):
     type: Literal["tool_result"] = "tool_result"
     tool_use_id: str
     content: str  # skill.handle() returns str
-    is_error: bool = False  # adapter/loop set True on parse failure -> LLM self-corrects (s11)
+    is_error: bool = False  # 解析失败时置 True，模型据此自我修正
 
 
 Block = Annotated[Union[TextBlock, ToolUseBlock, ToolResultBlock], Field(discriminator="type")]

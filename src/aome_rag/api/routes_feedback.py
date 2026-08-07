@@ -1,4 +1,4 @@
-"""Feedback endpoints: submit rating / missing-info, admin list."""
+"""反馈接口：提交评分/缺失补充，管理端列表/删除。"""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ async def submit_feedback(
     user: User = Depends(get_current_user),
     state=Depends(get_state),
 ) -> dict:
-    """Submit a feedback record (rating or missing-info)."""
+    """提交一条反馈记录（评分或缺失补充）。"""
     data = body.model_dump()
     data["user_id"] = user.id
     fid = await state.session_store.submit_feedback(data)
@@ -38,7 +38,7 @@ async def submit_feedback(
 async def list_feedback(
     user: User = Depends(get_current_user), state=Depends(get_state)
 ) -> list[dict]:
-    """Admin: list all feedback across users."""
+    """管理端：列出所有用户的反馈。"""
     return await state.session_store.list_all_feedback()
 
 

@@ -1,4 +1,4 @@
-"""Stable content hashing + deterministic chunk ids for idempotent ingestion."""
+"""稳定内容哈希 + 确定性 chunk id。"""
 
 from __future__ import annotations
 
@@ -10,12 +10,11 @@ def content_hash(text: str) -> str:
 
 
 def chunk_id(source_doc: str, chunk_index: int) -> str:
-    """Deterministic, Zvec-safe chunk id.
+    """确定性、Zvec 安全的 chunk id。
 
-    Zvec doc ids reject spaces / CJK / path separators, so we cannot use the source_doc
-    string directly. Use a short hash of source_doc + the index — stable across re-ingest
-    (so upsert replaces), and only [0-9a-f#] characters (all Zvec-safe). source_doc itself
-    is stored as a field and used for filtering / display."""
+    Zvec 文档 id 不接受空格/中文/路径分隔符，所以不能直接用 source_doc。
+    用 source_doc + 索引的短哈希——跨重新入库稳定（upsert 才能替换），
+    且只含 [0-9a-f#] 字符（全部 Zvec 安全）。source_doc 本身存成字段用于过滤/展示。"""
     h = hashlib.sha1(source_doc.encode("utf-8")).hexdigest()[:16]
     return f"{h}#{chunk_index}"
 

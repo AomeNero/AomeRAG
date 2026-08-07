@@ -1,4 +1,4 @@
-"""Skill protocol + execution context."""
+"""技能协议 + 执行上下文（SkillContext）。"""
 
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ from aome_rag.providers.base import ToolSchema
 
 
 class EndTurn(Exception):
-    """Raised by a skill (e.g. clarify) to stop the agent loop cleanly mid-turn."""
+    """由技能（如 clarify）抛出，让 agent 循环在本轮中途干净地停止。"""
 
 
 @dataclass
 class SkillContext:
-    """Per-tool-call context handed to a skill. `services` is a typed bag (retriever,
-    session_store, ...) injected by the app; `pending` collects events the skill emits."""
+    """每次工具调用传给技能的上下文。`services` 是应用注入的类型化服务包
+    （retriever、session_store 等）；`pending` 收集技能发出的事件。"""
 
     user: Any = None
     session_id: str = ""
