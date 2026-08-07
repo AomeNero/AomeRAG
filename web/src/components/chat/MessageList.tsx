@@ -55,7 +55,7 @@ export function MessageList({ messages, streamingId, onRegenerate, searchQuery, 
 
   const lastAssistantId = [...messages].reverse().find((m) => m.role === 'assistant')?.id
 
-  // find the preceding user message for a given assistant message
+  // 查找给定 assistant 消息前一条 user 消息（用于反馈时带上用户提问）
   const getUserQuestion = (idx: number): string => {
     for (let i = idx - 1; i >= 0; i--) {
       if (messages[i].role === 'user') return messages[i].content
@@ -112,8 +112,8 @@ function Message({
   const hits = m.toolEvents?.flatMap((t) => t.details ?? []) ?? []
   const ring = highlight ? 'ring-2 ring-brand rounded-lg' : ''
 
-  // detect "no results": a tool_result with details === [] (empty array, search ran but 0 hits).
-  // details may be null for non-kb_search tools (bash/read/write/edit) — Array.isArray guards that.
+  // 判断"检索无结果"：tool_result 的 details === []（空数组 = 检索跑了但 0 命中）。
+  // details 对非 kb_search 工具（bash/read/write/edit）可能为 null —— 用 Array.isArray 兜底防崩溃。
   const hadEmptySearch = m.toolEvents?.some(
     (t) => t.status === 'ok' && Array.isArray(t.details) && t.details.length === 0
   ) ?? false
@@ -137,7 +137,7 @@ function Message({
   const onThumbsUp = () => { void rate('up') }
   const onThumbsDown = () => { setShowDownDialog(true) }
   const submitDown = async () => {
-    await rate('down', downComment)  // single call with comment included
+    await rate('down', downComment)  // 一次调用带上评论
     setShowDownDialog(false)
     setDownComment('')
   }
@@ -184,7 +184,7 @@ function Message({
       )}
       {/* 只给最后一条 assistant 消息显示工具状态条；流式进行中即使还没工具事件也显示"正在生成" */}
       {isLast && (streaming || (m.toolEvents?.length ?? 0) > 0) && (
-        <SearchChip
+        <StepPanel
           toolEvents={m.toolEvents ?? []}
           elapsed={m.turnElapsed}
           expanded={showDetails}
@@ -307,20 +307,54 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
 }
 
 /** 工具活动名称映射：进行中状态显示具体动作，避免笼统的"正在检索"让用户以为卡死 */
-function toolActivity(name: string): string {
+/** 工具动作名（用于步骤列表），如 "读取文件" "生成文件" */
+function toolAction(name: string): string {
   switch (name) {
-    case 'kb_search': return '正在检索知识库'
-    case 'read': return '正在读取文件'
-    case 'write': return '正在生成文件'
-    case 'edit': return '正在修改文件'
-    case 'bash': return '正在执行命令'
-    case 'load_skill': return '正在加载技能'
-    default: return '正在处理'
+    case 'kb_search': return '检索知识库'
+    case 'read': return '读取文件'
+    case 'write': return '生成文件'
+    case 'edit': return '修改文件'
+    case 'bash': return '执行命令'
+    case 'load_skill': return '加载技能'
+    default: return '处理'
   }
 }
 
-/** 聚合的工具状态条：进行中显示"正在生成 + 实时用时"（秒数跳动=在干活），完成显示条数/耗时 */
-function SearchChip({
+/** 取路径最后一段文件名（兼容 / 和 \），并去掉 `#段落` 后缀。如
+ *  `@skill/products/references/电测产品履历表.md#GS321I` → `电测产品履历表.md` */
+function fileNameOf(p: string): string {
+  const noSection = p.split('#')[0]
+  const parts = noSection.split(/[/\\]/)
+  return parts[parts.length - 1] || p
+}
+
+/** 截断长文本（用于命令/查询词预览） */
+function truncate(s: string, max = 24): string {
+  return s.length > max ? s.slice(0, max) + '…' : s
+}
+
+/** 从工具参数里提取展示细节：文件名 / 技能名 / 命令 / 查询词 */
+function toolDetail(t: ToolEvent): string | null {
+  const args = t.arguments
+  if (!args) return null
+  switch (t.name) {
+    case 'read':
+    case 'write':
+    case 'edit':
+      return typeof args.path === 'string' ? fileNameOf(args.path) : null
+    case 'load_skill':
+      return typeof args.skill_name === 'string' ? truncate(args.skill_name) : null
+    case 'kb_search':
+      return typeof args.query === 'string' ? truncate(args.query) : null
+    case 'bash':
+      return typeof args.command === 'string' ? truncate(args.command) : null
+    default:
+      return null
+  }
+}
+
+/** 折叠式执行步骤面板：进行中自动展开显示每步，完成折叠成一行摘要，点击展开明细 */
+function StepPanel({
   toolEvents,
   elapsed,
   expanded,
@@ -334,6 +368,7 @@ function SearchChip({
   onClick: () => void
 }) {
   const [now, setNow] = useState(() => Date.now())
+  const [showAllSteps, setShowAllSteps] = useState(false)
   const startedAt = useRef<number | null>(null)
   useEffect(() => {
     if (streaming) {
@@ -354,50 +389,112 @@ function SearchChip({
     0,
   )
   const n = hits.length > 0 ? hits.length : contentCount
-  const clickable = hits.length > 0
+  const showSteps = streaming || expanded // 进行中始终展开
 
-  let label: string
-  let icon: ReactNode
-  let tone = 'text-muted'
+  let summaryLabel: string
+  let summaryIcon: ReactNode
+  let summaryTone = 'text-muted'
   if (streaming) {
     // 整个生成过程都显示明确的"进行中"状态（转圈 + 秒数跳动），避免用户以为卡死
-    label = runningTool ? toolActivity(runningTool.name) : '正在生成…'
-    icon = <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" strokeWidth={2} />
-    tone = 'text-brand'
+    summaryLabel = runningTool ? `${toolAction(runningTool.name)}…` : '正在生成…'
+    summaryIcon = <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" strokeWidth={2} />
+    summaryTone = 'text-brand'
   } else if (anyError) {
-    label = '处理出错'
-    icon = <span className="text-red-500">⚠</span>
-    tone = 'text-red-600'
+    summaryLabel = '处理出错'
+    summaryIcon = <span className="text-red-500">⚠</span>
+    summaryTone = 'text-red-600'
   } else if (searches.length > 0) {
-    label = n > 0 ? `知识库检索 · ${n} 条` : '知识库检索完成（0 条）'
-    icon = <Check className="h-3.5 w-3.5 text-brand" strokeWidth={2} />
-    tone = 'text-foreground'
+    summaryLabel = n > 0 ? `知识库检索 · ${n} 条` : '知识库检索完成（0 条）'
+    summaryIcon = <Check className="h-3.5 w-3.5 text-brand" strokeWidth={2} />
+    summaryTone = 'text-foreground'
   } else {
-    label = `已使用 ${toolEvents.length} 个工具`
-    icon = <Check className="h-3.5 w-3.5 text-brand" strokeWidth={2} />
-    tone = 'text-foreground'
+    summaryLabel = `已使用 ${toolEvents.length} 个工具`
+    summaryIcon = <Check className="h-3.5 w-3.5 text-brand" strokeWidth={2} />
+    summaryTone = 'text-foreground'
   }
   // 进行中实时跳动用时，结束后用最终 turnElapsed
   const shownElapsed = streaming && startedAt.current != null ? (now - startedAt.current) / 1000 : elapsed
-  if (shownElapsed != null) label += ` · 用时 ${shownElapsed.toFixed(1)} 秒`
+  if (shownElapsed != null) summaryLabel += ` · 用时 ${shownElapsed.toFixed(1)} 秒`
 
-  const cls = `mb-2 inline-flex items-center gap-1.5 rounded-full bg-field px-2.5 py-1 text-xs ${tone} ${
-    clickable ? 'cursor-pointer transition hover:bg-hover' : ''
-  }`
-  if (!clickable) {
-    return (
-      <div className={cls}>
-        {icon}
-        <span>{label}</span>
-      </div>
-    )
-  }
   return (
-    <button onClick={onClick} className={cls} title="点击展开/收起检索详情">
+    <div
+      className={`mb-2 overflow-hidden rounded-lg border border-line bg-field/60 ${
+        showSteps ? '' : 'cursor-pointer transition hover:bg-hover'
+      }`}
+    >
+      <button
+        onClick={onClick}
+        className={`flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-xs ${summaryTone}`}
+        title="点击展开/收起执行过程"
+      >
+        {summaryIcon}
+        <span>{summaryLabel}</span>
+        {toolEvents.length > 0 && (
+          <span className="ml-auto">
+            <ChevronIcon expanded={showSteps} />
+          </span>
+        )}
+      </button>
+      {showSteps && toolEvents.length > 0 && (
+        <div className="border-t border-line px-2.5 py-1.5">
+          {/* 默认只显示最近 3 个步骤，更早的收进"显示全部" */}
+          {toolEvents.slice(showAllSteps ? 0 : -3).map((t) => (
+            <StepRow key={t.id} t={t} />
+          ))}
+          {!showAllSteps && toolEvents.length > 3 && (
+            <button
+              onClick={() => setShowAllSteps(true)}
+              className="mt-1 w-full rounded px-1 py-0.5 text-left text-xs text-brand transition hover:bg-hover"
+            >
+              + 显示全部 {toolEvents.length} 个步骤
+            </button>
+          )}
+          {showAllSteps && toolEvents.length > 3 && (
+            <button
+              onClick={() => setShowAllSteps(false)}
+              className="mt-1 w-full rounded px-1 py-0.5 text-left text-xs text-muted transition hover:bg-hover"
+            >
+              − 收起
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** 单个工具步骤行：状态图标 + 动作名 + 本步用时 */
+function StepRow({ t }: { t: ToolEvent }) {
+  let icon: ReactNode
+  let tone = 'text-muted'
+  switch (t.status) {
+    case 'running':
+      icon = <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" strokeWidth={2} />
+      tone = 'text-brand'
+      break
+    case 'ok':
+      icon = <Check className="h-3.5 w-3.5 text-brand" strokeWidth={2} />
+      tone = 'text-foreground'
+      break
+    case 'error':
+      icon = <span className="text-red-500">⚠</span>
+      tone = 'text-red-600'
+      break
+    case 'cancelled':
+      icon = <span className="text-muted">⊘</span>
+      tone = 'text-muted'
+      break
+  }
+  const detail = toolDetail(t)
+  return (
+    <div className="flex items-center gap-1.5 py-0.5 text-xs">
       {icon}
-      <span>{label}</span>
-      <ChevronIcon expanded={expanded} />
-    </button>
+      <span className={`truncate ${tone}`}>
+        {toolAction(t.name)}
+        {detail ? `: ${detail}` : ''}
+      </span>
+      {t.elapsed != null && <span className="ml-auto shrink-0 text-muted">{t.elapsed.toFixed(1)} 秒</span>}
+    </div>
   )
 }
 
@@ -528,7 +625,7 @@ function buildMdComponents(openImage: (src: string) => void): Components {
     <td className="border border-line px-3 py-1.5" {...props} />
   ),
   img: ({ node, src, ...props }) => {
-    // normalize `../images/…` / `images/…` → `/images/…` so the backend mount serves them
+    // 把 `../images/…` / `images/…` 归一成 `/images/…`，让后端挂载点能正常提供图片
     let s = src ?? ''
     while (s.startsWith('../')) s = s.slice(3)
     const fixedSrc = s.startsWith('images/')
@@ -555,7 +652,7 @@ function buildMdComponents(openImage: (src: string) => void): Components {
         </code>
       )
     }
-    // inline code that is exactly a KB image path → render the actual image
+    // 行内代码恰好是知识库图片路径 → 直接渲染成图片
     if (typeof children === 'string') {
       const imgSrc = imagePathToSrc(children)
       if (imgSrc) {
@@ -638,7 +735,7 @@ function Markdown({ text }: { text: string }) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[
-          rehypeRaw, // render raw HTML (e.g. <img src="../images/...">) as real elements
+          rehypeRaw, // 渲染原始 HTML（如 <img src="../images/...">）为真实元素
           [rehypeHighlight, {
             languages: {
               python: hlPython, javascript: hlJavascript, cpp: hlCpp, c: hlC, csharp: hlCsharp,

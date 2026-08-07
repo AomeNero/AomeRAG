@@ -35,6 +35,7 @@ export function ChatApp() {
   const abortRef = useRef<AbortController | null>(null)
   const currentIdRef = useRef<string | null>(null)
   const turnStartRef = useRef<number | null>(null)
+  const toolStartRef = useRef<Record<string, number>>({}) // tool_call_id → 开始时刻
   const counter = useRef(0)
   const nextId = (p: string) => `${p}-${counter.current++}`
 
@@ -133,6 +134,7 @@ export function ChatApp() {
         break
       case 'tool_start':
         if (!turnStartRef.current) turnStartRef.current = performance.now()
+        toolStartRef.current[ev.tool_call_id] = performance.now()
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
@@ -140,7 +142,12 @@ export function ChatApp() {
                   ...m,
                   toolEvents: [
                     ...(m.toolEvents ?? []),
-                    { id: ev.tool_call_id, name: ev.name, status: 'running' as const },
+                    {
+                      id: ev.tool_call_id,
+                      name: ev.name,
+                      status: 'running' as const,
+                      arguments: ev.arguments,
+                    },
                   ],
                 }
               : m,
@@ -148,6 +155,10 @@ export function ChatApp() {
         )
         break
       case 'tool_result':
+        // 结算该步骤用时，供折叠步骤面板显示每步耗时
+        const startTs = toolStartRef.current[ev.tool_call_id]
+        const stepElapsed = startTs != null ? (performance.now() - startTs) / 1000 : undefined
+        delete toolStartRef.current[ev.tool_call_id]
         setMessages((prev) =>
           prev.map((m) => {
             if (m.id !== assistantId) return m
@@ -161,6 +172,7 @@ export function ChatApp() {
                       | 'cancelled',
                     content: ev.content,
                     details: ev.details,
+                    elapsed: stepElapsed,
                   }
                 : t,
             )
