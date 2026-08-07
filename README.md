@@ -39,6 +39,7 @@
 - **检索 = 找最相关的卡片**：两种找法同时用，混合排序。
 - **Agent = 会动脑的助手**：自己判断问题清不清楚→先查技能→再搜知识库→不够就反问你。
 - **Skill = 助手会的技能**：检索、追问、加载 API 文档都是技能；丢一个 `.md` 文件进去就多一项能力。
+- **工作区 = 能干活的助手**：还能读写/执行 `workspace/` 里的文件（如生成测试脚本）；生成的整套文件打包成 zip，客户点链接即可下载。
 - **反馈 = 质量闭环**：每条回答可以👍/👎；知识库没找到时可以补充反馈；管理员在 `/feedback` 页面统一查看。
 
 **四步上手**：
@@ -67,7 +68,7 @@
 
 ## 2. 技术栈
 
-**后端**（`src/aome_rag/`）：Python 3.11+ · FastAPI + uvicorn（**单 worker**）· Pydantic v2 · DeepSeek（OpenAI 兼容）· Ollama `bge-m3` · [Zvec](https://github.com/alibaba/zvec) · **Pandoc**（docx 清洗）· markitdown · **Pillow**（图片转 PNG）· requests · aiosqlite · structlog · pytest（81 测试）。
+**后端**（`src/aome_rag/`）：Python 3.11+ · FastAPI + uvicorn（**单 worker**）· Pydantic v2 · DeepSeek（OpenAI 兼容）· Ollama `bge-m3` · [Zvec](https://github.com/alibaba/zvec) · **Pandoc**（docx 清洗）· markitdown · **Pillow**（图片转 PNG）· requests · aiosqlite · structlog · pytest（**151 测试**）。
 
 **前端**（`web/`）：React 18 + TypeScript · **react-router-dom**（`/` + `/admin` + `/feedback`）· Vite 6 · Tailwind v4 · react-markdown + remark-gfm + **rehype-highlight**（11 语言语法高亮）· lucide-react。
 
@@ -78,13 +79,15 @@ flowchart LR
   Browser["浏览器<br/>/ 聊天 · /admin 管理 · /feedback 反馈"] -->|HTTP / SSE| API["FastAPI<br/>单 worker"]
   subgraph Core["Agent Core"]
     Loop["AgentLoop<br/>三步协议"]
-    Tools["tools/<br/>kb_search · clarify · load_skill"]
+    Tools["tools/<br/>kb_search · clarify · load_skill<br/>bash · read · write · edit"]
   end
   API --> Loop
   Loop -->|tool_call| Tools
   Tools -->|retrieve| Retr["Retriever<br/>dense+FTS hybrid"]
   Retr --> Zv[("Zvec 向量库")]
   Tools -->|load_skill| Skills[("skills/<br/>.md 技能文件")]
+  Tools -->|write| WS[("workspace/<br/>agent 生成文件")]
+  Browser -->|"下载 /workspace/*"| WS
   Loop -->|LLM| Prov["OpenAICompatProvider"]
   Prov --> DS[("DeepSeek 云")]
   Clean["CleaningPipeline<br/>Pandoc/MarkItDown"] --> MD[("md-data<br/>清洗后 .md")]
@@ -142,15 +145,22 @@ dense + FTS 双通道 → RRF 融合 → top_k Hit（带 source_doc/heading_path
 **三步协议**（system prompt 定义，可手编 `prompt/system-prompt.md`）：
 
 1. **判断清晰度** → 缺关键信息（型号/信号类型/术语）→ `clarify`（问一个聚焦问题，EndTurn 停本轮）。
-2. **先查技能** → 有匹配技能（如 pg-api）→ `load_skill("name")` 加载 .md 全文到上下文。
+2. **先查技能** → 有匹配技能（如 pg-lua-recipe）→ `load_skill("name")` 加载 .md 全文到上下文。
 3. **再搜知识库** → `kb_search(query)` 混合检索；连续 2 次不相关就停。
 
 工具集（注册在 `tools/`）：
 - `kb_search` — 知识库检索（hybrid）。
 - `clarify` — 追问用户（EndTurn）。
 - `load_skill` — s07 按需加载 .md 技能（SkillLoaderSkill，每轮动态扫描 skills/）。
+- `bash` / `read` / `write` / `edit` — **内置工作区工具**：只读写 `WORKSPACE_DIR`（默认 `./workspace`），bash 跑 PowerShell（cwd=workspace，30s 超时）。`read` 额外可读 skill 的参考/模板文件（`@skill/<name>/<子目录>/<file>`，只读，支持 `#标题` 按段落读）。所有调用写入审计日志（`logs/app/tools.log`，含 user + session）。
 
-`MAX_ITERATIONS=12`；`load_base_prompt()` 每轮从 `prompt/system-prompt.md` 读取（实时生效）。
+`MAX_ITERATIONS`（默认 12，本地 `.env` 常设 500，部署包设 **50**）；`load_base_prompt()` 每轮从 `prompt/system-prompt.md` 读取（实时生效）。
+
+### 工作区与下载（workspace）
+
+- agent 生成的整套文件（如 pg-lua-recipe 的 Recipe）写入 `workspace/`，服务以 **`/workspace` 静态挂载**供浏览器直接下载。
+- 技能会打包生成目录为 `Recipe_<规格>.zip` 并在回答里给出可点击下载链接（`/workspace/<目录名>.zip`）。
+- `WORKSPACE_RETENTION_DAYS`（默认 7）：服务启动时自动清理超过保留期的生成文件。
 
 ---
 
@@ -159,9 +169,11 @@ dense + FTS 双通道 → RRF 融合 → top_k Hit（带 source_doc/heading_path
 **`src/aome_rag/tools/`** = Python 引擎（`Skill` 协议 + `SkillRegistry` + kb_search + clarify + skill_loader）。
 
 **`src/aome_rag/skills/`** = .md 技能数据文件（Claude Code 式）：
-- 目录式：`skills/<name>/SKILL.md`（+ 可选 `references/`）。
+- 目录式：`skills/<name>/SKILL.md`（+ 可选 `references/`、`assets/`）。
 - 独立式：`skills/<name>.md`。
-- SkillLoaderSkill 每轮扫描，system prompt 列出可用技能目录；模型调 `load_skill(name)` → 全文注入上下文。
+- SkillLoaderSkill 每轮扫描，system prompt 按 **frontmatter `description`（触发条件）** 列出技能目录（`name: 描述`）；模型命中后调 `load_skill(name)` → 全文注入上下文。
+- 技能内的参考/模板文件由 `read` 工具读取：`@skill/<name>/references|assets/<file>`，可用 `#标题` 只读某段落。
+- **内置技能**：`pg-lua-recipe`（PG 图案发生器 Lua Recipe 开发，含 RecipeTemplate + API 参考）、`products`（电测产品履历查询）。
 - 加新技能 = 丢 .md 文件，下一轮自动生效。
 
 **系统提示词**：`src/aome_rag/prompt/system-prompt.md`（可手编，每轮重读实时生效）。
@@ -179,7 +191,7 @@ dense + FTS 双通道 → RRF 融合 → top_k Hit（带 source_doc/heading_path
 
 **SSE 事件**：`session` / `token` / `tool_start` / `tool_result`（含 `details` 结构化命中 + `cancelled` 标记）/ `clarify` / `final` / `error`。
 
-**检索 UI**：搜索中显示「正在检索」；回复完成后统一显示「知识库检索 · N 条 · 用时 X.X 秒」+ 可折叠详情面板（chevron 箭头）。
+**工具状态 UI**：进行中显示「正在生成/当前动作 + 实时用时」（秒数跳动，避免长任务误以为卡死）；完成后聚合为一条「知识库检索 · N 条 · 用时 X.X 秒」或「已使用 N 个工具」+ 可折叠详情面板（chevron 箭头）。历史消息只最后一条显示状态条，空消息不渲染；回答里的裸 `/workspace/` 路径自动转成可点击下载链接。
 
 **消息持久化**：clarify 问题文本写入 assistant 消息 blocks，回看历史时 toolEvents 从 ToolUseBlock + ToolResultBlock 重建。
 
@@ -213,8 +225,8 @@ AomeCode/
 │  ├─ prompt/system-prompt.md    # 可手编系统提示词（实时生效）
 │  ├─ providers/                 # LLM 抽象（OpenAI 兼容适配器）
 │  ├─ agent/                     # loop / events / context
-│  ├─ tools/                     # Skill 引擎：base / registry / kb_search / clarify / skill_loader
-│  ├─ skills/                    # .md 技能数据（pg-api/SKILL.md 等）
+│  ├─ tools/                     # Skill 引擎：base / registry / kb_search / clarify / skill_loader / workspace
+│  ├─ skills/                    # .md 技能数据（pg-lua-recipe/、products/）
 │  ├─ retrieval/                 # Zvec hybrid 检索
 │  ├─ ingestion/                 # 切片 + 向量化 + upsert
 │  ├─ cleaning/                  # Pandoc/MarkItDown 清洗 + 图片 + front-matter
@@ -227,7 +239,9 @@ AomeCode/
 ├─ raw/
 │  ├─ raw-data/                  # 原始文件（PDF/docx/xlsx）
 │  └─ md-data/                   # 清洗输出（.md + images/）
-├─ tests/                        # unit / integration（81 测试）
+├─ workspace/                    # agent 工作区（生成文件，/workspace 下载，按保留期清理）
+├─ logs/                         # 服务器日志（app/ + access/，按天轮转）
+├─ tests/                        # unit / integration（151 测试）
 └─ pyproject.toml  .env.example  README.md
 ```
 
@@ -374,6 +388,9 @@ curl -X POST http://localhost:8000/chat -H "X-User-Id: alice" \
 | 中文乱码 | 确保终端/编辑器用 UTF-8；Windows PowerShell 跑 `chcp 65001` |
 | cpolar 穿透报 `crypto.randomUUID` | 已修复（自动 fallback）；确保重新 `npm run build` |
 | 前端页面白屏 | 确认 `npm run build` 产出了 `web/dist/`；检查 `FRONTEND_DIST` 路径 |
+| `exceeded N iterations`（服务器报错） | 部署包 `.env` 的 `MAX_ITERATIONS` 太低（原 6），改成 50 后重启 |
+| 服务器提示"知识库检索失败" | 服务器缺 bge-m3：`ollama pull bge-m3`（或重跑启动.bat） |
+| `/workspace/xxx` 返回 404 | 确认服务是新代码（含 workspace 挂载）；`/workspace` 无目录列表，只能访问具体文件（如 `.zip`） |
 
 ### 10.8 开发模式（热重载）
 
@@ -417,18 +434,22 @@ curl -X POST http://localhost:8000/chat -H "X-User-Id: alice" \
 | `EMBED_DIM` | 1024 | |
 | `ZVEC_PATH` / `KB_COLLECTION` | `./data/zvec` / `kb_chunks_v1` | |
 | `TOP_K` | 6 | 检索 |
-| `MAX_CONCURRENT_LOOPS` / `MAX_ITERATIONS` | 16 / **12** | agent 并发与往返上限 |
+| `MAX_CONCURRENT_LOOPS` / `MAX_ITERATIONS` | 16 / 12 | agent 并发与往返上限（本地常设 500，部署包 50） |
 | `SQLITE_PATH` | `./data/sessions.db` | 会话 + 反馈 |
 | `RAW_DATA_DIR` / `MD_DATA_DIR` | `./raw/raw-data` / `./raw/md-data` | 清洗输入/输出 |
 | `FRONTEND_DIST` | `./web/dist` | 存在则后端托管前端 |
 | `SKILLS_DIR` | `./skills` | drop-in Python skills（.md 在包内 skills/） |
+| `WORKSPACE_DIR` | `./workspace` | agent 工作区（read/write/edit/bash 沙箱，`/workspace` 挂载下载） |
+| `WORKSPACE_RETENTION_DAYS` | 7 | 启动时清理 N 天前的生成文件（≤0 禁用） |
+| `LOG_DIR` / `LOG_RETENTION_DAYS` | `./logs` / 30 | 日志目录 / 按天保留天数 |
+| `LOG_TO_FILE` / `LOG_APP_TO_FILE` / `LOG_ACCESS_TO_FILE` | true | 日志开关（总开关 / 应用 / 访问），false 则纯控制台 |
 
 ---
 
 ## 12. 测试
 
 ```sh
-uv run pytest -q                 # unit + integration（81 测试）
+uv run pytest -q                 # unit + integration（151 测试）
 uv run pytest -q -m live         # 真 DeepSeek/Ollama
 ```
 
@@ -452,3 +473,6 @@ uv run pytest -q -m live         # 真 DeepSeek/Ollama
 14. **反馈系统**：👍/👎 + 缺失补充 → SQLite → /feedback 管理。
 15. **检索 UI**：整体用时计时 + 可折叠详情面板；EndTurn 取消的工具标记 `cancelled`。
 16. **消息持久化**：clarify 问题写入 blocks；回看历史从 ToolUseBlock + ToolResultBlock 重建 toolEvents。
+17. **工作区沙箱**：bash/read/write/edit 限定 `WORKSPACE_DIR`；路径越界校验 + 全量审计日志；`/workspace` 静态挂载供下载，按 `WORKSPACE_RETENTION_DAYS` 自动清理。
+18. **Skill 描述路由**：目录按 frontmatter `description`（触发条件）展示，命中才 load_skill；`read` 可读 `@skill/...` 参考文件（只读）。
+19. **文件日志**：structlog 按模块分包写 `logs/app/`，访问日志写 `logs/access/`，按天轮转、保留 `LOG_RETENTION_DAYS` 天，开关可配。
